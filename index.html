@@ -1,0 +1,3315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STRAY SIGNAL</title>
+<style>
+  /* ===== 화면 꾸미기 (CSS) ===== */
+  /* 글자 크기는 "em" 으로 적었어. 1em = 게임 화면 가로의 1% (JavaScript 가 자동으로 맞춤) */
+
+  :root {
+    --font-ko: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    --bg: #0b0d1a;       /* 가장 어두운 바탕 */
+    --panel: #14182e;    /* 상자 바탕 */
+    --line: #e8e6f0;     /* 밝은 테두리, 글자 */
+    --dim: #8a90b3;      /* 흐린 글자 */
+    --gold: #f0c050;     /* 금색 (선택, 궁극기) */
+    --red: #e0505a;      /* 위험 */
+    --blue: #5b8fd6;     /* 에너지 */
+  }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #05060d;
+    color: var(--line);
+    font-family: var(--font-ko);
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  /* 도트 그림은 흐려지지 않게 */
+  canvas {
+    image-rendering: pixelated;
+  }
+
+  /* ----- 게임 전체 상자 (컴퓨터에서는 16:9 가로 화면) ----- */
+  #stage {
+    position: relative;
+    width: min(1280px, 96vw, calc((100vh - 24px) * 16 / 9));
+    width: min(1280px, 96vw, calc((100dvh - 24px) * 16 / 9));
+    aspect-ratio: 16 / 9;
+    display: grid;
+    grid-template-columns: 1fr 42.1875em 1fr; /* 왼쪽 정보 | 게임 화면 | 오른쪽 정보 */
+    overflow: hidden;
+    background: var(--bg);
+    border: 0.35em solid var(--line);
+    box-shadow: 0 0 0 0.35em #000, 0.6em 0.6em 0 0.35em #000;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* 옛날 모니터 같은 가로줄 (아주 옅게) */
+  #stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, 0.1) 2px 3px);
+  }
+
+  /* 휴대폰처럼 세로로 긴 화면에서는 9:16 으로 바꾸고 정보를 위아래에 둠 */
+  #stage.portrait {
+    width: min(96vw, calc((100vh - 24px) * 9 / 16));
+    width: min(96vw, calc((100dvh - 24px) * 9 / 16));
+    aspect-ratio: 9 / 16;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 56em 1fr;
+  }
+
+  #field {
+    position: relative;
+    width: 42.1875em;
+    height: 56.25em;
+    overflow: hidden;
+    border-left: 0.3em solid var(--line);
+    border-right: 0.3em solid var(--line);
+    box-sizing: border-box;
+  }
+
+  #stage.portrait #field {
+    width: 42em;
+    height: 56em;
+    border: none;
+    border-top: 0.3em solid var(--line);
+    border-bottom: 0.3em solid var(--line);
+  }
+
+  #game {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none; /* 손가락으로 밀 때 화면이 같이 움직이지 않게 하기 */
+  }
+
+  /* ----- 도트 글자 (캔버스로 그린 영어 글자) ----- */
+  .pt {
+    display: block;
+    width: auto;
+  }
+
+  .pt-s { height: 1.4em; }
+  .pt-m { height: 2.2em; }
+  .pt-l { height: 3.4em; }
+  .pt-xl { height: 5.2em; }
+  .pt-logo { height: 7.5em; margin-bottom: 0.6em; }
+
+  /* ----- 도트 상자, 버튼 ----- */
+  .box {
+    background: var(--panel);
+    border: 0.3em solid var(--line);
+    box-shadow: 0.35em 0.35em 0 #000;
+  }
+
+  .btn {
+    font-family: var(--font-ko);
+    font-size: 1.4em;
+    font-weight: 700;
+    padding: 0.55em 1.6em;
+    background: var(--panel);
+    color: var(--line);
+    border: 0.15em solid var(--line);
+    box-shadow: 0.2em 0.2em 0 #000;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    background: var(--line);
+    color: var(--panel);
+  }
+
+  .btn.primary {
+    background: var(--gold);
+    color: #1a1426;
+    border-color: #fff6d8;
+  }
+
+  .btn.primary:hover {
+    background: #fff6d8;
+  }
+
+  /* 주요 버튼 앞의 깜빡이는 화살표 */
+  .btn.primary::before {
+    content: "▶ ";
+    animation: blink 0.8s steps(1) infinite;
+  }
+
+  .btn.small {
+    font-size: 1em;
+    padding: 0.4em 1em;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* 얼굴 도트를 넣는 액자 */
+  .frame {
+    position: relative;
+    background: #262b4a;
+    border: 0.25em solid var(--line);
+    box-shadow: 0.25em 0.25em 0 #000;
+    overflow: hidden;
+  }
+
+  .frame canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ----- 시작 / 선택 / 결과 화면 공통 ----- */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+  }
+
+  .screenBg {
+    background: var(--bg);
+  }
+
+  /* ----- 시작 화면 ----- */
+  #titleScreen {
+    background: #05060d url("data:image/png;base64,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") center / cover no-repeat;
+    image-rendering: pixelated;
+  }
+
+  .titleBlock {
+    position: absolute;
+    left: 5%;
+    top: 7%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.3em;
+  }
+
+  .tagline {
+    margin: 0;
+    font-size: 1.5em;
+    font-weight: 700;
+    text-shadow: 0.12em 0.12em 0 #000;
+  }
+
+  .synopsis {
+    max-width: 40em;
+    margin: 0;
+    padding: 0.9em 1.2em;
+    font-size: 1.1em;
+    line-height: 1.8;
+    color: #d6d9ee;
+    background: rgba(5, 6, 13, 0.78);
+    border-left: 0.3em solid var(--gold);
+    word-break: keep-all;
+  }
+
+  .help {
+    margin: 0;
+    font-size: 1em;
+    line-height: 1.8;
+    color: var(--dim);
+    text-shadow: 0.1em 0.1em 0 #000;
+  }
+
+  .titleBlock .help {
+    padding: 0.3em 0.8em;
+    color: #c9cde4;
+    background: rgba(5, 6, 13, 0.78);
+  }
+
+  .credit {
+    position: absolute;
+    right: 1.5%;
+    bottom: 1.5%;
+    padding: 0.3em 0.7em;
+    font-size: 0.85em;
+    color: #b8bdd6;
+    background: rgba(5, 6, 13, 0.7);
+  }
+
+  /* ----- 캐릭터 선택 화면 ----- */
+  #selectScreen {
+    display: grid;
+    grid-template-columns: 40em 1fr;
+    grid-template-rows: auto 1fr auto;
+    gap: 1.4em 2.4em;
+    padding: 2.2em 3em;
+    box-sizing: border-box;
+  }
+
+  .selectHead {
+    grid-column: 1 / 3;
+    display: flex;
+    align-items: flex-end;
+    gap: 2em;
+  }
+
+  .selectHead p {
+    margin: 0 0 0.3em;
+    font-size: 1.1em;
+    color: var(--dim);
+  }
+
+  /* 파일럿 칸 (4개씩 두 줄) */
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1em;
+    align-content: start;
+  }
+
+  .tile {
+    padding: 0.5em 0.5em 0.7em;
+    background: var(--panel);
+    border: 0.2em solid #3a3f66;
+    color: var(--line);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .tile .frame {
+    aspect-ratio: 1;
+    border-width: 0.18em;
+    box-shadow: none;
+  }
+
+  .tile .pt {
+    height: 1.3em;
+    margin: 0.6em auto 0;
+  }
+
+  .tile:hover {
+    border-color: var(--dim);
+  }
+
+  /* 고른 칸은 금색 테두리가 깜빡임 */
+  .tile.selected {
+    border-color: var(--gold);
+    animation: pick 0.5s steps(1) infinite;
+  }
+
+  @keyframes pick {
+    50% { border-color: #fff6d8; }
+  }
+
+  /* 자세히 보기 */
+  .detail {
+    display: grid;
+    grid-template-columns: 14em 1fr;
+    gap: 0 1.6em;
+    align-content: start;
+    padding: 1.6em;
+  }
+
+  .detail .frame {
+    width: 14em;
+    height: 14em;
+    grid-row: span 3;
+  }
+
+  .detailName {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.8em;
+  }
+
+  .detailName span {
+    font-size: 1.3em;
+    font-weight: 700;
+  }
+
+  .detailRole {
+    margin-top: 0.5em;
+    font-size: 1.05em;
+    color: var(--dim);
+  }
+
+  .detailQuote {
+    margin-top: 0.6em;
+    font-size: 1.1em;
+    font-weight: 700;
+    color: var(--gold);
+  }
+
+  .detailBio {
+    grid-column: 1 / 3;
+    margin: 1.2em 0 0.8em;
+    font-size: 1.05em;
+    line-height: 1.7;
+    color: #c9cde4;
+    word-break: keep-all;
+  }
+
+  .stats {
+    grid-column: 1 / 3;
+  }
+
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+    font-size: 1em;
+    line-height: 1.8;
+  }
+
+  .stat > span {
+    width: 2.6em;
+    color: var(--dim);
+  }
+
+  .pips {
+    display: flex;
+    gap: 0.25em;
+  }
+
+  .pips i {
+    width: 1.6em;
+    height: 0.7em;
+    background: #2a2f52;
+  }
+
+  .pips i.on {
+    background: var(--pc);
+  }
+
+  .detailUlt {
+    grid-column: 1 / 3;
+    margin-top: 0.9em;
+    padding: 0.7em 1em;
+    border: 0.15em dashed #4a5080;
+    font-size: 1em;
+    line-height: 1.6;
+  }
+
+  .detailUlt b {
+    color: var(--gold);
+  }
+
+  .detailUlt .pt {
+    margin-bottom: 0.5em;
+  }
+
+  .selectFoot {
+    grid-column: 1 / 3;
+    display: flex;
+    align-items: center;
+    gap: 1.4em;
+  }
+
+  .selectFoot .help {
+    margin-left: auto;
+  }
+
+  /* ----- 대사 장면 ----- */
+  #dialogue {
+    background: rgba(5, 6, 13, 0.82);
+    cursor: pointer;
+  }
+
+  #dialogue.chapterMode {
+    background: rgba(5, 6, 13, 0.97);
+  }
+
+  #chapterTitle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 30%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2em;
+    text-align: center;
+  }
+
+  #chapterTitle b {
+    font-size: 3.4em;
+    font-weight: 800;
+    text-shadow: 0.08em 0.08em 0 #000;
+  }
+
+  #chapterTitle span {
+    font-size: 1.1em;
+    color: var(--dim);
+    animation: blink 0.9s steps(1) infinite;
+  }
+
+  #dialogueBox {
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    bottom: 5%;
+    min-height: 24%;
+    display: flex;
+    gap: 1.8em;
+    padding: 1.6em 2em;
+    box-sizing: border-box;
+  }
+
+  #dialogueBox .frame {
+    width: 10em;
+    height: 10em;
+    flex: none;
+  }
+
+  .talkBody {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .speakerLine {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.8em;
+    margin-bottom: 0.7em;
+  }
+
+  .speakerLine small {
+    font-size: 1em;
+    color: var(--dim);
+  }
+
+  #dialogueText {
+    font-size: 1.55em;
+    line-height: 1.65;
+    word-break: keep-all;
+  }
+
+  /* 해설은 얼굴 없이 가운데 정렬 */
+  #dialogueBox.narration .frame,
+  #dialogueBox.narration .speakerLine {
+    display: none;
+  }
+
+  #dialogueBox.narration #dialogueText {
+    text-align: center;
+    color: #c9cde4;
+  }
+
+  #nextHint {
+    position: absolute;
+    right: 1.4em;
+    bottom: 0.8em;
+    font-size: 1.2em;
+    color: var(--gold);
+    animation: blink 0.7s steps(1) infinite;
+  }
+
+  #skipButton {
+    position: absolute;
+    top: 3%;
+    right: 3%;
+  }
+
+  /* ----- 결과 화면 ----- */
+  #result {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4em;
+  }
+
+  #result .frame {
+    width: 18em;
+    height: 18em;
+  }
+
+  .resultPanel {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.3em;
+    max-width: 50em;
+  }
+
+  #resultText {
+    font-size: 1.35em;
+    line-height: 1.6;
+    color: #c9cde4;
+    word-break: keep-all;
+  }
+
+  #resultText b {
+    display: block;
+    margin-top: 0.5em;
+    color: var(--line);
+  }
+
+  .resultScore {
+    display: flex;
+    align-items: center;
+    gap: 1.2em;
+    padding: 0.8em 1.2em;
+  }
+
+  .resultButtons {
+    display: flex;
+    gap: 1.2em;
+  }
+
+  /* ----- 게임 중 양옆 정보판 ----- */
+  .hud {
+    display: flex;
+    flex-direction: column;
+    gap: 1.8em;
+    padding: 2em;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  .pilotCard {
+    display: flex;
+    gap: 1.2em;
+    align-items: flex-start;
+  }
+
+  .pilotCard .frame {
+    width: 9em;
+    height: 9em;
+    flex: none;
+  }
+
+  /* 맞았을 때 얼굴 액자가 흔들리고 붉어짐 */
+  .pilotCard.hurt .frame {
+    animation: shake 0.3s steps(3);
+  }
+
+  @keyframes shake {
+    0% { transform: translateX(-0.4em); background: var(--red); }
+    50% { transform: translateX(0.4em); background: var(--red); }
+    100% { transform: none; }
+  }
+
+  .pilotInfo {
+    min-width: 0;
+  }
+
+  .pilotInfo small {
+    display: block;
+    margin-top: 0.5em;
+    font-size: 1em;
+    color: var(--dim);
+  }
+
+  .pilotInfo p {
+    margin: 0.6em 0 0;
+    font-size: 0.95em;
+    line-height: 1.5;
+    color: #c9cde4;
+    word-break: keep-all;
+  }
+
+  .meterHead {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 0.5em;
+    font-size: 1em;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+
+  /* 칸이 나뉜 막대 */
+  .bar {
+    height: 1.2em;
+    padding: 0.15em;
+    background: #05060d;
+    border: 0.15em solid var(--line);
+  }
+
+  .bar.thin {
+    height: 0.7em;
+  }
+
+  .fill {
+    height: 100%;
+    width: 0%;
+    background: repeating-linear-gradient(90deg, var(--blue) 0 0.8em, transparent 0.8em 1em);
+  }
+
+  .fill.low { background: repeating-linear-gradient(90deg, var(--red) 0 0.8em, transparent 0.8em 1em); }
+  .ultFill { background: repeating-linear-gradient(90deg, var(--gold) 0 0.8em, transparent 0.8em 1em); }
+  .bossFill { background: repeating-linear-gradient(90deg, var(--red) 0 0.8em, transparent 0.8em 1em); }
+
+  .ultReady .ultFill {
+    animation: blink 0.4s steps(1) infinite;
+  }
+
+  .keyHint {
+    margin-top: 0.6em;
+    font-size: 0.95em;
+    color: var(--dim);
+  }
+
+  kbd {
+    padding: 0 0.5em;
+    border: 0.12em solid var(--dim);
+    font-family: inherit;
+    color: var(--line);
+  }
+
+  .block .pt-m {
+    margin: 0.5em 0 0.7em;
+  }
+
+  .subText {
+    margin-top: 0.5em;
+    font-size: 1em;
+    color: var(--dim);
+  }
+
+  /* 궁극기 버튼 */
+  .ultButton {
+    align-self: center;
+    width: 9em;
+    height: 9em;
+    flex: none;
+    background: var(--panel);
+    border: 0.25em solid #3a3f66;
+    color: #5a608a;
+    font-family: var(--font-ko);
+    font-size: 1em;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .ultButton .pt {
+    margin: 0 auto;
+    opacity: 0.35;
+  }
+
+  .ultButton.ready .pt {
+    opacity: 1;
+  }
+
+  .ultButton.ready {
+    background: var(--gold);
+    border-color: #fff6d8;
+    color: #1a1426;
+    animation: bob 0.5s steps(2) infinite alternate;
+  }
+
+  @keyframes bob {
+    to { transform: translateY(-0.4em); }
+  }
+
+  .controls {
+    margin-top: auto;
+    font-size: 0.95em;
+    line-height: 1.8;
+    color: var(--dim);
+  }
+
+  /* ----- 게임 중 무전 (컴퓨터에서는 왼쪽 아래) ----- */
+  #comms {
+    position: absolute;
+    left: 2em;
+    bottom: 2em;
+    width: 24.4em;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    pointer-events: none;
+  }
+
+  .comm {
+    display: flex;
+    gap: 0.7em;
+    padding: 0.5em 0.7em;
+    background: var(--panel);
+    border: 0.15em solid var(--who);
+    font-size: 0.95em;
+    line-height: 1.5;
+    word-break: keep-all;
+  }
+
+  .comm canvas {
+    width: 3em;
+    height: 3em;
+    flex: none;
+    background: #262b4a;
+  }
+
+  .comm b {
+    display: block;
+    color: var(--who);
+  }
+
+  /* ----- 궁극기 컷인 ----- */
+  #cutin {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 32%;
+    height: 17%;
+    display: flex;
+    align-items: center;
+    gap: 1.4em;
+    padding-left: 6%;
+    background: var(--pc);
+    border-top: 0.35em solid var(--line);
+    border-bottom: 0.35em solid var(--line);
+    transform: translateX(-110%);
+    pointer-events: none;
+  }
+
+  #cutin.show {
+    animation: cutin 1.1s steps(12) forwards;
+  }
+
+  @keyframes cutin {
+    0% { transform: translateX(-110%); }
+    16% { transform: translateX(0); }
+    80% { transform: translateX(0); }
+    100% { transform: translateX(110%); }
+  }
+
+  #cutin .frame {
+    width: 7em;
+    height: 7em;
+  }
+
+  #cutinName {
+    margin-top: 0.8em;
+  }
+
+  #cutinName .pt {
+    height: 2.4em;
+  }
+
+  /* ----- 세로 화면(휴대폰)일 때 배치 바꾸기 ----- */
+  #stage.portrait #hudLeft {
+    display: grid;
+    grid-template-columns: 7em 1fr;
+    column-gap: 1.2em;
+    row-gap: 0.6em;
+    align-content: center;
+    padding: 0.8em 1.2em;
+  }
+
+  #stage.portrait .pilotCard { grid-row: span 2; }
+  #stage.portrait .pilotCard .frame { width: 7em; height: 7em; }
+  #stage.portrait .pilotInfo,
+  #stage.portrait .keyHint,
+  #stage.portrait .controls,
+  #stage.portrait .block .pt-m,
+  #stage.portrait .help,
+  #stage.portrait .synopsis,
+  #stage.portrait .selectHead p { display: none; }
+
+  #stage.portrait #hudRight {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    column-gap: 1.2em;
+    align-items: center;
+    padding: 0.8em 1.2em;
+  }
+
+  #stage.portrait #bossBox { grid-column: 1 / 3; grid-row: 2; }
+  #stage.portrait #ultButton { grid-column: 3; grid-row: 1 / 3; width: 7em; height: 7em; }
+
+  #stage.portrait #comms { left: 3%; right: 3%; width: auto; top: 10.2em; bottom: auto; }
+  #stage.portrait .comm { font-size: 1.1em; }
+
+  #stage.portrait .titleBlock { left: 0; right: 0; top: 6%; align-items: center; text-align: center; }
+  #stage.portrait .pt-logo { height: 7em; }
+  #stage.portrait #titleScreen { background-position: 58% center; }
+
+  #stage.portrait #selectScreen { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; padding: 1.6em; }
+  #stage.portrait .selectHead,
+  #stage.portrait .selectFoot { grid-column: 1; }
+  #stage.portrait .detail { grid-template-columns: 9em 1fr; padding: 1em; }
+  #stage.portrait .detail .frame { width: 9em; height: 9em; }
+  #stage.portrait .detailBio { display: none; }
+  #stage.portrait .selectHead .pt-xl { height: 3.6em; }
+  #stage.portrait .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #stage.portrait .ultButton .pt { height: 2.2em; }
+  #stage.portrait .tagline { background: rgba(5, 6, 13, 0.7); padding: 0.2em 0.6em; }
+
+  #stage.portrait #dialogueBox { left: 3%; right: 3%; bottom: 2%; padding: 1.2em; gap: 1em; }
+  #stage.portrait #dialogueBox .frame { width: 7em; height: 7em; }
+  #stage.portrait #dialogueText { font-size: 1.45em; }
+
+  #stage.portrait #result { flex-direction: column; gap: 2em; padding: 2em; }
+  #stage.portrait #result .frame { width: 12em; height: 12em; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+
+  <!-- 왼쪽 정보판: 파일럿, 에너지, 궁극기 -->
+  <aside id="hudLeft" class="hud">
+    <div id="pilotCard" class="pilotCard">
+      <div id="hudFace" class="frame"></div>
+      <div class="pilotInfo">
+        <div id="hudName"></div>
+        <small id="hudRole"></small>
+        <p id="hudQuote"></p>
+      </div>
+    </div>
+    <div class="meter">
+      <div class="meterHead"><span id="energyLabel"></span><span id="energyText"></span></div>
+      <div class="bar"><div id="energyFill" class="fill"></div></div>
+    </div>
+    <div class="meter">
+      <div class="meterHead"><span id="ultName"></span><span id="ultState"></span></div>
+      <div class="bar"><div id="ultFill" class="fill ultFill"></div></div>
+      <div class="keyHint"><kbd>SPACE</kbd> 궁극기 사용</div>
+    </div>
+  </aside>
+
+  <!-- 가운데: 게임 화면 -->
+  <div id="field">
+    <canvas id="game" width="480" height="640"></canvas>
+    <div id="cutin">
+      <div id="cutinFace" class="frame"></div>
+      <div><div id="cutinLabel"></div><div id="cutinName"></div></div>
+    </div>
+  </div>
+
+  <!-- 게임 중 무전 -->
+  <div id="comms"></div>
+
+  <!-- 오른쪽 정보판: 스테이지, 점수, 궁극기 버튼 -->
+  <aside id="hudRight" class="hud">
+    <div class="block">
+      <div id="stageLabel"></div>
+      <div id="stageTitle"></div>
+      <div class="bar thin"><div id="progressFill" class="fill"></div></div>
+      <div id="progressText" class="subText"></div>
+    </div>
+    <div class="block">
+      <div id="scoreLabel"></div>
+      <div id="scoreText" style="margin-top: 0.6em;"></div>
+    </div>
+    <div id="bossBox" class="block hidden">
+      <div id="bossName" style="margin-bottom: 0.5em;"></div>
+      <div class="bar"><div id="bossFill" class="fill bossFill"></div></div>
+    </div>
+    <button id="ultButton" class="ultButton"><span id="ultButtonText"></span></button>
+    <div class="controls">방향키 : 이동<br>스페이스바 : 궁극기<br>사격은 자동 · 화면을 밀어도 이동</div>
+  </aside>
+
+  <!-- 시작 화면 -->
+  <div id="titleScreen" class="overlay">
+    <div class="titleBlock">
+      <div id="logo1"></div><div id="logo2"></div>
+      <p class="tagline">버려진 구역에서 올라온 마지막 신호</p>
+      <p class="synopsis">지구 궤도를 두른 고리 도시 '네온 링'. 어느 새벽, 관리 AI 아르고스가 하층 구역의 공기를 끊었다. 남은 시간은 여섯 시간. 떠돌이 비행대 '스트레이 시그널'의 마지막 비행이 시작된다.</p>
+      <button id="startButton" class="btn primary">게임 시작</button>
+      <p class="help">방향키 이동 · 스페이스바 궁극기 · 사격 자동<br>휴대폰 : 좌우로 밀어서 이동 · 궁극기 버튼 터치</p>
+    </div>
+    <div class="credit">배경 사진 : NASA 아폴로 8호 「지구돋이」(1968) · 퍼블릭 도메인 · 도트로 변환</div>
+  </div>
+
+  <!-- 캐릭터 선택 화면 -->
+  <div id="selectScreen" class="overlay screenBg hidden">
+    <div class="selectHead">
+      <div id="selectTitle"></div>
+      <p>고른 파일럿에 따라 대사와 결말이 달라져요.</p>
+    </div>
+    <div id="tiles" class="tiles"></div>
+    <div id="detail" class="detail box"></div>
+    <div class="selectFoot">
+      <button id="backButton" class="btn small">뒤로</button>
+      <button id="launchButton" class="btn primary">출격</button>
+      <p class="help">← → ↑ ↓ : 고르기 · ENTER : 출격</p>
+    </div>
+  </div>
+
+  <!-- 대사 장면 -->
+  <div id="dialogue" class="overlay hidden">
+    <div id="chapterTitle" class="hidden"><div id="chapterLabel"></div><b id="chapterName"></b><span>화면을 누르면 시작</span></div>
+    <div id="dialogueBox" class="box">
+      <div id="talkFace" class="frame"></div>
+      <div class="talkBody">
+        <div class="speakerLine"><div id="speakerName"></div><small id="speakerTitle"></small></div>
+        <div id="dialogueText"></div>
+      </div>
+      <div id="nextHint">▼</div>
+    </div>
+    <button id="skipButton" class="btn small">건너뛰기 ▶▶</button>
+  </div>
+
+  <!-- 결과 화면 -->
+  <div id="result" class="overlay screenBg hidden">
+    <div id="resultFace" class="frame"></div>
+    <div class="resultPanel">
+      <div id="resultTitle"></div>
+      <div id="resultText"></div>
+      <div class="resultScore box"><span>점수</span><div id="resultScore"></div></div>
+      <div class="resultButtons">
+        <button id="retryButton" class="btn primary">다시 하기</button>
+        <button id="reselectButton" class="btn">캐릭터 선택</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== 게임 동작 (JavaScript) =====
+
+  // 화면의 부품을 이름으로 가져오는 도우미
+  const $ = id => document.getElementById(id);
+
+  const stage = $("stage");
+  const canvas = $("game");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;   // 게임 화면 가로 크기
+  const H = canvas.height;  // 게임 화면 세로 크기
+  const PX = 3;             // 도트 한 칸의 크기 (화면에서 3x3 픽셀)
+  const SHIP_PX = 4;        // 내 기체만 조금 더 크게 (도트 한 칸 = 4x4 픽셀)
+
+  // ----- 바꿔 보기 좋은 숫자들 -----
+  const HIT_SCORE = 1;          // 적을 맞힐 때마다 얻는 점수
+  const KILL_SCORE = 10;        // 적을 격파하면 얻는 점수
+  const BULLET_SPEED = 540;     // 내 총알 빠르기
+  const ULT_MAX = 100;          // 궁극기 게이지가 가득 찼을 때의 값
+  const ULT_START = 50;         // 시작할 때 차 있는 게이지
+  const ULT_PER_HIT = 2;        // 맞힐 때마다 차는 게이지
+  const ULT_PER_KILL = 12;      // 격파할 때마다 차는 게이지
+  const CRASH_DAMAGE = 20;      // 적과 부딪혔을 때 닳는 에너지
+  const STAGE_HEAL = 30;        // 스테이지를 깨면 회복되는 에너지
+  const MAX_ENEMIES = 8;        // 화면에 한꺼번에 나올 수 있는 적의 수
+  const TYPE_SPEED = 28;        // 대사 글자가 한 자씩 나오는 간격 (1000 = 1초)
+
+  // 궁극기마다의 숫자
+  const LASER_SECONDS = 3;      // 카이: 광선이 나가는 시간
+  const LASER_DAMAGE = 40;      // 카이: 광선이 1초 동안 주는 피해
+  const EMP_DAMAGE = 6;         // 징크스: EMP가 모든 적에게 주는 피해
+  const EMP_STUN = 3;           // 징크스: 적이 멈춰 있는 시간
+  const SHIELD_SECONDS = 5;     // 브릭: 실드가 유지되는 시간
+  const SHIELD_HEAL = 40;       // 브릭: 실드를 켤 때 회복되는 에너지
+  const PSYCHIC_SECONDS = 3;    // 노바: 적 탄을 되돌리는 시간
+  const VOLLEY_SECONDS = 2;     // 렌: 함대 포격이 쏟아지는 시간
+  const BUSTER_DAMAGE = 40;     // 볼트: 차지 버스터가 적 하나에 주는 피해
+  const BIT_SECONDS = 6;        // 소라: 비트가 함께 싸우는 시간
+
+  // =====================================================================
+  //  도트 글꼴 (영어 대문자, 숫자, 기호 몇 개)
+  //  글자 하나는 가로 5칸 x 세로 7칸. 숫자 하나가 한 줄이고, 2진수로 칸을 켬
+  // =====================================================================
+  const FONT = {
+    A: [14, 17, 17, 31, 17, 17, 17], B: [30, 17, 17, 30, 17, 17, 30], C: [14, 17, 16, 16, 16, 17, 14],
+    D: [30, 17, 17, 17, 17, 17, 30], E: [31, 16, 16, 30, 16, 16, 31], F: [31, 16, 16, 30, 16, 16, 16],
+    G: [14, 17, 16, 23, 17, 17, 15], H: [17, 17, 17, 31, 17, 17, 17], I: [14, 4, 4, 4, 4, 4, 14],
+    J: [7, 2, 2, 2, 2, 18, 12], K: [17, 18, 20, 24, 20, 18, 17], L: [16, 16, 16, 16, 16, 16, 31],
+    M: [17, 27, 21, 21, 17, 17, 17], N: [17, 25, 21, 19, 17, 17, 17], O: [14, 17, 17, 17, 17, 17, 14],
+    P: [30, 17, 17, 30, 16, 16, 16], Q: [14, 17, 17, 17, 21, 18, 13], R: [30, 17, 17, 30, 20, 18, 17],
+    S: [15, 16, 16, 14, 1, 1, 30], T: [31, 4, 4, 4, 4, 4, 4], U: [17, 17, 17, 17, 17, 17, 14],
+    V: [17, 17, 17, 17, 17, 10, 4], W: [17, 17, 17, 21, 21, 21, 10], X: [17, 17, 10, 4, 10, 17, 17],
+    Y: [17, 17, 10, 4, 4, 4, 4], Z: [31, 1, 2, 4, 8, 16, 31],
+    0: [14, 17, 19, 21, 25, 17, 14], 1: [4, 12, 4, 4, 4, 4, 14], 2: [14, 17, 1, 2, 4, 8, 31],
+    3: [30, 1, 1, 14, 1, 1, 30], 4: [2, 6, 10, 18, 31, 2, 2], 5: [31, 16, 30, 1, 1, 17, 14],
+    6: [6, 8, 16, 30, 17, 17, 14], 7: [31, 1, 2, 4, 8, 8, 8], 8: [14, 17, 17, 14, 17, 17, 14],
+    9: [14, 17, 17, 15, 1, 2, 12],
+    ".": [0, 0, 0, 0, 0, 12, 12], "-": [0, 0, 0, 31, 0, 0, 0], "/": [1, 2, 2, 4, 8, 8, 16],
+    ":": [0, 12, 12, 0, 12, 12, 0], "!": [4, 4, 4, 4, 4, 0, 4], "?": [14, 17, 1, 2, 4, 0, 4],
+    "'": [4, 4, 8, 0, 0, 0, 0], "%": [24, 25, 2, 4, 8, 19, 3], "·": [0, 0, 0, 12, 12, 0, 0],
+    " ": [0, 0, 0, 0, 0, 0, 0]
+  };
+
+  // 글자 하나의 도트를 찍기 (where: 그릴 곳, x·y: 왼쪽 위, size: 도트 크기)
+  function drawGlyph(where, ch, x, y, size) {
+    const rows = FONT[ch] || FONT[" "];
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (rows[r] & (16 >> c)) where.fillRect(x + c * size, y + r * size, size, size);
+      }
+    }
+  }
+
+  // 영어 글자를 도트 그림으로 만들기 (그림자는 오른쪽 아래로 한 칸)
+  function pixelText(text, color, shadow) {
+    text = String(text).toUpperCase();
+    const pic = document.createElement("canvas");
+    pic.width = Math.max(1, text.length * 6);
+    pic.height = 8;
+    pic.className = "pt";
+    const g = pic.getContext("2d");
+    for (const [ink, dx] of [[shadow || "#000000", 1], [color, 0]]) {
+      g.fillStyle = ink;
+      for (let i = 0; i < text.length; i++) drawGlyph(g, text[i], i * 6 + dx, dx, 1);
+    }
+    return pic;
+  }
+
+  // 화면의 칸 안에 도트 글자 넣기 (글자가 바뀔 때만 새로 그림)
+  function setPixelText(el, text, color, sizeClass, shadow) {
+    const key = text + "|" + color;
+    if (el.dataset.pt === key) return;
+    el.dataset.pt = key;
+    el.innerHTML = "";
+    const pic = pixelText(text, color, shadow);
+    pic.classList.add(sizeClass || "pt-m");
+    el.appendChild(pic);
+  }
+
+  // 게임 화면에 도트 글자 그리기 (가운데 정렬)
+  function drawGameText(text, cx, y, size, color) {
+    text = String(text).toUpperCase();
+    const width = (text.length * 6 - 1) * size;
+    const left = Math.round(cx - width / 2);
+    for (const [ink, dx] of [["#000000", size], [color, 0]]) {
+      ctx.fillStyle = ink;
+      for (let i = 0; i < text.length; i++) drawGlyph(ctx, text[i], left + i * 6 * size + dx, y + dx, size);
+    }
+  }
+
+  // =====================================================================
+  //  도트 그림 도우미
+  // =====================================================================
+
+  // 도트 그림 그리기 (글자 하나가 도트 하나. 점(.)은 빈칸, 다른 글자는 색 이름표)
+  function drawSprite(where, rows, colors, x, y, size) {
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < rows[r].length; c++) {
+        const color = colors[rows[r][c]];
+        if (!color) continue;
+        where.fillStyle = color;
+        where.fillRect(x + c * size, y + r * size, size, size);
+      }
+    }
+  }
+
+  // 도트 그림을 미리 그려 두기 (매번 점을 하나씩 찍지 않아도 되어서 빨라짐)
+  function bake(rows, colors, size) {
+    const pic = document.createElement("canvas");
+    pic.width = rows[0].length * size;
+    pic.height = rows.length * size;
+    drawSprite(pic.getContext("2d"), rows, colors, 0, 0, size);
+    return pic;
+  }
+
+  // 색을 하얀색 쪽으로 섞어서 밝게 만들기 (맞았을 때 번쩍임에 씀)
+  function brighten(color) {
+    const n = parseInt(color.slice(1), 16);
+    const mix = c => Math.round(c + (255 - c) * 0.65);
+    return "rgb(" + mix(n >> 16) + "," + mix((n >> 8) & 255) + "," + mix(n & 255) + ")";
+  }
+
+  function brightPalette(colors) {
+    const out = {};
+    for (const key in colors) out[key] = brighten(colors[key]);
+    return out;
+  }
+
+  // =====================================================================
+  //  얼굴 도트 (가로 16칸 x 세로 16칸, 큰 머리에 동그란 눈의 귀여운 모양)
+  //  O: 테두리, S: 피부, E: 눈, W: 하양(눈 반짝임), P: 볼 홍조, M: 입, H: 머리카락, C: 옷, 나머지: 캐릭터마다 다름
+  // =====================================================================
+  const OUTLINE = "#1a1426";
+  const SKIN = { S: "#ffe0cc", W: "#ffffff", M: "#c06070", P: "#f4a0a8", E: "#2a2a44", O: OUTLINE };
+
+  const FACES = {
+    // 카이: 삐죽삐죽 은발, 남색 옷깃
+    kai: {
+      rows: [
+        "..OO..OOOO..OO..",
+        ".OHHOOHHHHOOHHO.",
+        ".OHHHHHHHHHHHHO.",
+        "OHHHHHHHHHHHHHHO",
+        "OHHHHHHHHHHHHHHO",
+        "OHHSHHSSSHHSSHHO",
+        "OHSSSSSSSSSSSSHO",
+        "OSSSEWSSSSEWSSSO",
+        "OSSSEESSSSEESSSO",
+        "OSPPSSSSSSSSPPSO",
+        "OSSSSSSMMSSSSSSO",
+        ".OSSSSSSSSSSSSO.",
+        "..OOSSSSSSSSOO..",
+        "...OCCOWWOCCO...",
+        "..OCCCCWWCCCCO..",
+        ".OCCCCCWWCCCCCO."
+      ],
+      colors: { H: "#dfe3ec", C: "#3b4f80" }
+    },
+    // 징크스: 분홍 똥머리 두 개, 이마 위 고글, 덧니
+    jinx: {
+      rows: [
+        ".OOO........OOO.",
+        "OHHHOOOOOOOOHHHO",
+        "OHHOHHHHHHHHOHHO",
+        ".OOHGGHHHHGGHOO.",
+        "OHHGLLGHHGLLGHHO",
+        "OHHSHSSSSSSHSHHO",
+        "OHSSSSSSSSSSSSHO",
+        "OSSSEWSSSSEWSSSO",
+        "OSSSEESSSSEESSSO",
+        "OSPPSSSSSSSSPPSO",
+        "OSSSSSSMWSSSSSSO",
+        ".OSSSSSSSSSSSSO.",
+        "..OOSSSSSSSSOO..",
+        "...OCCOOOOCCO...",
+        "..OCCACCCCACCO..",
+        ".OCCCACCCCACCCO."
+      ],
+      colors: { H: "#f5a8bb", G: "#4a4060", L: "#9fdcf0", E: "#22605a", C: "#5a5078", A: "#f5a8bb" }
+    },
+    // 브릭: 짧은 갈색 머리, 굵은 눈썹, 코에 반창고, 동그란 수염
+    brick: {
+      rows: [
+        "....OOOOOOOO....",
+        "..OOHHHHHHHHOO..",
+        ".OHHHHHHHHHHHHO.",
+        ".OHHHHHHHHHHHHO.",
+        "OHHHHHHHHHHHHHHO",
+        "OHHSSSSSSSSSSHHO",
+        "OHSOOSSSSSSOOSHO",
+        "OSSSEWSSSSEWSSSO",
+        "OSSSEESSSSEESSSO",
+        "OSPPSSSAASSSPPSO",
+        "OBBSSSSMMSSSSBBO",
+        ".OBBBBSSSSBBBBO.",
+        "..OOBBBBBBBBOO..",
+        "...OFFOOOOFFO...",
+        "..OCFFCCCCFFCO..",
+        ".OCCCCCCCCCCCCO."
+      ],
+      colors: { H: "#7a5236", B: "#6a4630", A: "#f2e6c8", F: "#efe2c8", C: "#8a5a3a" }
+    },
+    // 노바: 흰 줄이 들어간 검은 긴 머리, 보라색 눈 (엑스맨 모티브)
+    nova: {
+      rows: [
+        "....OOOOOOOO....",
+        "..OOHHHHWWHHOO..",
+        ".OHHHHHHWWHHHHO.",
+        ".OHHHHHHWHHHHHO.",
+        "OHHHHHHHHHHHHHHO",
+        "OHHHHSSSSSSHHHHO",
+        "OHHSSSSSSSSSSHHO",
+        "OHSSVWSSSSVWSSHO",
+        "OHSSVVSSSSVVSSHO",
+        "OHPPSSSSSSSSPPHO",
+        "OHSSSSSMMSSSSSHO",
+        "OHHSSSSSSSSSSHHO",
+        "OHHOOSSSSSSOOHHO",
+        "OHHOCCOOOOCCOHHO",
+        "OOOCCYCCCCYCCOOO",
+        ".OCCCYCCCCYCCCO."
+      ],
+      colors: { H: "#343a5a", W: "#f0f0f8", V: "#9a6ae0", C: "#2e3b60", Y: "#f0c050" }
+    },
+    // 렌 제독: 베레모, 졸린 눈, 하얀 스카프 (은하영웅전설 모티브)
+    len: {
+      rows: [
+        "...OOOOOOOOO....",
+        "..OKKKKKKKKKOO..",
+        ".OKKKKKKKKKKAKO.",
+        ".OKKKKKKKKKKKKO.",
+        "OHHHHHHHHHHHHHHO",
+        "OHHSHHSSSSHHSHHO",
+        "OHSSSSSSSSSSSSHO",
+        "OSSSSSSSSSSSSSSO",
+        "OSSEEESSSSEEESSO",
+        "OSPPSSSSSSSSPPSO",
+        "OSSSSSSMMSSSSSSO",
+        ".OSSSSSSSSSSSSO.",
+        "..OOSSSSSSSSOO..",
+        "...OWWOOOOWWO...",
+        "..OCWWWWWWWWCO..",
+        ".OCCCCCWWCCCCCO."
+      ],
+      colors: { K: "#2f3b5c", A: "#f0c050", H: "#262630", E: "#3a2a20", W: "#f2ecdf", C: "#2e2e3a" }
+    },
+    // 볼트: 동그란 파란 헬멧의 로봇 소년 (록맨 모티브)
+    volt: {
+      rows: [
+        "....OOOOOOOO....",
+        "..OOBBBNNBBBOO..",
+        ".OBBLBBNNBBBBBO.",
+        ".OBLBBBBBBBBBBO.",
+        "OBBBBBBBBBBBBBBO",
+        "OBBDDDDDDDDDDBBO",
+        "OBDSSSSSSSSSSDBO",
+        "OBSSEWSSSSEWSSBO",
+        "OBSSEESSSSEESSBO",
+        "OBPPSSSSSSSSPPBO",
+        "OBSSSSSMMSSSSSBO",
+        ".OBSSSSSSSSSSBO.",
+        "..OOSSSSSSSSOO..",
+        "...OBBOOOOBBO...",
+        "..OBBBBLLBBBBO..",
+        ".OBBBBBLLBBBBBO."
+      ],
+      colors: { B: "#3f78e0", L: "#9fd0ff", N: "#a8f0ff", D: "#234a8a" }
+    },
+    // 소라: 바보털이 솟은 갈색 머리, 흰 파일럿 슈트 (건담 모티브)
+    sora: {
+      rows: [
+        ".......OO.......",
+        "....OOOHHOOO....",
+        "..OOHHHHHHHHOO..",
+        ".OHHHHHHHHHHHHO.",
+        "OHHHHHHHHHHHHHHO",
+        "OHHSHHHSSHHHSHHO",
+        "OHSSSSSSSSSSSSHO",
+        "OSSSEWSSSSEWSSSO",
+        "OSSSEESSSSEESSSO",
+        "OSPPSSSSSSSSPPSO",
+        "OSSSSSSMMSSSSSSO",
+        ".OSSSSSSSSSSSSO.",
+        "..OOSSSSSSSSOO..",
+        "...OWWORROWWO...",
+        "..OWWWWBBWWWWO..",
+        ".OWWWWWBBWWWWWO."
+      ],
+      colors: { H: "#7a5034", W: "#eef1f6", R: "#d85050", B: "#3f62b8" }
+    },
+    // 노아: 남색 단발, 동그란 안경, 헤드셋
+    noa: {
+      rows: [
+        "....OOOOOOOO....",
+        "..OOHHHHHHHHOO..",
+        ".OHHHHHHHHHHHHO.",
+        "TOHHHHHHHHHHHHOT",
+        "TOHHHHHHHHHHHHOT",
+        "TOHHHHHHHHHHHHOT",
+        "OOHSSSSSSSSSSHOO",
+        "OHGGGGSSSSGGGGHO",
+        "OHGEWGSSSSGEWGHO",
+        "OHGGGGSSSSGGGGHO",
+        "OHPSSSSMMSSSSPHO",
+        "OHHSSSSSSSSSSHHO",
+        "OHHOOSSSSSSOOHHO",
+        ".OO.OWOOOOWO.OO.",
+        "..OWWWWAAWWWWO..",
+        ".OWWWWWAAWWWWWO."
+      ],
+      colors: { H: "#2d3350", T: "#3a3f58", G: "#4a4f70", E: "#6a50b0", W: "#eef1f6", A: "#3f9d9a" }
+    },
+    // 아르고스: 머리 위 고리, 하얀 긴 머리, 붉은 눈, 이마의 보석
+    argos: {
+      rows: [
+        ".YYYYYYYYYYYYYY.",
+        "....OOOOOOOO....",
+        "..OOHHHHHHHHOO..",
+        ".OHHHHHHRHHHHHO.",
+        "OHHHHHSSSSHHHHHO",
+        "OHHHSSSSSSSSHHHO",
+        "OHHSSSSSSSSSSHHO",
+        "OHSSRWSSSSRWSSHO",
+        "OHSSRRSSSSRRSSHO",
+        "OHQSSSSSSSSSSQHO",
+        "OHSSSSSMMSSSSSHO",
+        "OHHSSSSSSSSSSHHO",
+        "OHHOOSSSSSSOOHHO",
+        "OHHOWWOOOOWWOHHO",
+        "OHOWWWWQQWWWWOHO",
+        "OOWWWWWQQWWWWWOO"
+      ],
+      colors: { Y: "#d4b050", H: "#eceaf3", S: "#fbf1ee", R: "#d04050", Q: "#c04050", W: "#f4f2f8" }
+    },
+    // 베일: 보라색 헬멧에 금색 바이저를 올린 경비대장
+    veil: {
+      rows: [
+        "....OOOOOOOO....",
+        "..OOKKKKKKKKOO..",
+        ".OKKKKKKKKKKKKO.",
+        ".OKVVVVVVVVVVKO.",
+        "OKKVVVVVVVVVVKKO",
+        "OKKHHHHHHHHHHKKO",
+        "OKHSSSSSSSSSSHKO",
+        "OKSSEWSSSSEWSSKO",
+        "OKSSEESSSSEESSKO",
+        "OKPPSSSSSSSSPPKO",
+        "OKSSSSSMMSSSSSKO",
+        ".OKSSSSSSSSSSKO.",
+        "..OOSSSSSSSSOO..",
+        "...OCCOOOOCCO...",
+        "..OCCCCVVCCCCO..",
+        ".OCCCCCVVCCCCCO."
+      ],
+      colors: { K: "#7a6898", V: "#f0c050", H: "#c4bce0", E: "#4a3a70", C: "#3d3352" }
+    },
+    // 미라: 브릭의 딸. 머리끈, 주근깨, 노란 비옷
+    mira: {
+      rows: [
+        "....OOOOOOOO....",
+        "..OOHHHHHHHHOO..",
+        ".OHHHHHHHHHHHHO.",
+        "AOHHHHHHHHHHHHOA",
+        "OHHHHHHHHHHHHHHO",
+        "OHHSHHSSSSHHSHHO",
+        "OHSSSSSSSSSSSSHO",
+        "OSSSEWSSSSEWSSSO",
+        "OSSSEESSSSEESSSO",
+        "OSPPSFSSSSFSPPSO",
+        "OSSSSSSMMSSSSSSO",
+        ".OSSSSSSSSSSSSO.",
+        "..OOSSSSSSSSOO..",
+        "...OCCOOOOCCO...",
+        "..OCCCCCCCCCCO..",
+        ".OCCCCCCCCCCCCO."
+      ],
+      colors: { H: "#9a6440", A: "#e06a72", F: "#e09a80", C: "#f0c050" }
+    },
+    // 할든: 은회색 머리, 외눈 안경, 콧수염, 검은 정장과 붉은 넥타이
+    halden: {
+      rows: [
+        "................",
+        "....OOOOOOOO....",
+        "..OOHHHHHHHHOO..",
+        ".OHHHHHHHHHHHHO.",
+        "OHHHHHHHHHHHHHHO",
+        "OHSSSSSSSSSSSSHO",
+        "OSSOOOSSSSOOOSSO",
+        "OSSSEESSSGGGGSSO",
+        "OSSSEESSSGEEGSSO",
+        "OSSSSSSSSGGGGSSO",
+        "OSSSSHHHHHHSSSSO",
+        ".OSSSSSMMSSSSSO.",
+        "..OOSSSSSSSSOO..",
+        "...OCCOWWOCCO...",
+        "..OCCCCRRCCCCO..",
+        ".OCCCCCRRCCCCCO."
+      ],
+      colors: { H: "#b0b4c0", G: "#d4b050", E: "#3a3a44", M: "#8a4a4a", R: "#b03a3a", C: "#24242e" }
+    }
+  };
+
+  // 얼굴 도트를 그린 작은 캔버스 만들기
+  function faceCanvas(id) {
+    const face = FACES[id];
+    const pic = document.createElement("canvas");
+    pic.width = 16;
+    pic.height = 16;
+    drawSprite(pic.getContext("2d"), face.rows, Object.assign({}, SKIN, face.colors), 0, 0, 1);
+    return pic;
+  }
+
+  // 액자 안에 얼굴 넣기
+  function putFace(el, id) {
+    el.innerHTML = "";
+    el.appendChild(faceCanvas(id));
+  }
+
+  // =====================================================================
+  //  파일럿 (7명)
+  // =====================================================================
+  // hp: 에너지, speed: 이동 빠르기, fireEvery: 총알 간격(초), damage: 총알 한 발의 힘
+  // pattern: 총 쏘는 모양 (single 한 발, twin 나란히 두 발, spread 세 갈래, wide 다섯 갈래)
+  // ultName / ultEn: 궁극기 이름 (한글 / 영어, 영어는 도트 글꼴로 보여 줌)
+  // stats: 선택 화면에 보여 줄 칸 수 (1~5), ship: 기체 도트 (13칸 x 11칸), flames: 엔진 불꽃 위치 (칸 번호, 너비)
+
+  const PILOTS = {
+    kai: {
+      name: "KAI", korean: "카이", role: "전직 신디케이트 에이스 · 균형형",
+      color: "#5b8fd6", shot: "#a6c8ee",
+      hp: 100, speed: 250, fireEvery: 0.2, damage: 1, pattern: "single",
+      stats: { 체력: 3, 속도: 3, 화력: 3 },
+      ultName: "프리즘 레이저", ultEn: "PRISM LASER", ultText: "3초 동안 정면을 꿰뚫는 광선을 쏜다",
+      quote: "“내가 만든 것들은, 내가 멈춘다.”",
+      bio: "신디케이트 무인기 함대의 전투 패턴을 직접 설계한 에이스. 3년 전 ‘하층 조정 계획’에 반대하고 모든 것을 버린 채 사라졌다.",
+      winLine: "이번엔 떠나지 않아. 끝까지 남아서 지켜보겠어.",
+      loseLine: "…미안하다. 이번에도 끝까지 지키지 못했군.",
+      ship: [
+        "......O......",
+        ".....OWO.....",
+        ".....OGO.....",
+        "....OWGwO....",
+        "....OWAwO....",
+        "...OWWAwwO...",
+        "..OWWWAwwwO..",
+        ".OAWWWAwwwAO.",
+        "OAAWWOOOwwAAO",
+        "OAOOO...OOOAO",
+        "OO.........OO"
+      ],
+      flames: [[5, 3]]
+    },
+    jinx: {
+      name: "JINX", korean: "징크스", role: "하층 7구역의 해커 · 속도형",
+      color: "#e07a95", shot: "#f6bfcb",
+      hp: 70, speed: 330, fireEvery: 0.15, damage: 1, pattern: "single",
+      stats: { 체력: 2, 속도: 5, 화력: 3 },
+      ultName: "블랙아웃 EMP", ultEn: "BLACKOUT EMP", ultText: "적의 탄을 모두 지우고 모든 적을 3초 동안 멈춘다",
+      quote: "“보안? 그거 먹는 거야?”",
+      bio: "하층 7구역에서 자란 천재 해커. 함께 자란 패거리가 ‘정리 구역’에서 하룻밤 사이에 사라진 뒤로, 신디케이트의 비밀을 쫓고 있다.",
+      winLine: "패거리 녀석들 이름, 이제 링 전체가 기억하겠지. 다음엔 다 같이 위층 정원에 놀러 가자!",
+      loseLine: "치… 여기까지인가. 누가 내 대신 기록을 퍼뜨려 줘…",
+      ship: [
+        "......O......",
+        ".....OWO.....",
+        ".....OGO.....",
+        "..O..OGO..O..",
+        ".OAO.OWO.OAO.",
+        "..O.OWAwO.O..",
+        "....OWAwO....",
+        "...OWWAwwO...",
+        "..OAWWAwwAO..",
+        ".OAAOWWwOAAO.",
+        ".OO..OOO..OO."
+      ],
+      flames: [[6, 1]]
+    },
+    brick: {
+      name: "BRICK", korean: "브릭", role: "면허 잃은 화물선 조종사 · 방어형",
+      color: "#e09a4a", shot: "#f5cf95",
+      hp: 150, speed: 190, fireEvery: 0.38, damage: 2, pattern: "spread",
+      stats: { 체력: 5, 속도: 2, 화력: 5 },
+      ultName: "이지스 실드", ultEn: "AEGIS SHIELD", ultText: "5초 동안 무적이 되고 에너지를 40 회복한다",
+      quote: "“이번엔 늦지 않는다.”",
+      bio: "20년 동안 위층과 아래층을 오가던 화물선 조종사. 사고 책임을 뒤집어쓰고 면허를 잃었다. 하층에 사는 딸 미라와의 약속 하나로 버텨 왔다.",
+      winLine: "미라한테서 연락이 왔다. “아빠, 하늘에서 봤어.” …하하, 이제 집에 가야겠군.",
+      loseLine: "미라… 미안하다. 아빠가 또 늦었구나.",
+      ship: [
+        "....OOOOO....",
+        "...OWWGwwO...",
+        "...OWGGGwO...",
+        "O..OWWAwwO..O",
+        "AO.OWWAwwO.OA",
+        "AOOWWWAwwwOOA",
+        "AOWWWWAwwwwOA",
+        "AOWWOWAwOwwOA",
+        "AOWWOOOOOwwOA",
+        "AO.OO...OO.OA",
+        "OO.........OO"
+      ],
+      flames: [[5, 3], [0, 2], [11, 2]]
+    },
+    nova: {
+      name: "NOVA", korean: "노바", role: "변이체 염동력자 · 기교형",
+      color: "#a57fe0", shot: "#d6c4f6",
+      hp: 80, speed: 290, fireEvery: 0.2, damage: 1, pattern: "twin",
+      stats: { 체력: 2, 속도: 4, 화력: 4 },
+      ultName: "사이킥 리버스", ultEn: "PSYCHIC REVERSE", ultText: "3초 동안 가까이 온 적의 탄을 모두 되돌려 적에게 날려 보낸다",
+      quote: "“우리는 오류가 아니야.”",
+      bio: "태어날 때부터 염동력을 가진 ‘변이체’. 신디케이트의 변이체 수용 시설에서 탈출해, 하층 사람들 틈에 숨어 살아왔다.",
+      winLine: "이제 아무도 숨어 살지 않아도 돼. 우리 같은 사람들도.",
+      loseLine: "…또 그 실험실로 돌아가는 건가. 그것만은…",
+      ship: [
+        "O.....O.....O",
+        "OA...OWO...AO",
+        ".OA..OGO..AO.",
+        "..OA.OGO.AO..",
+        "...OAWAwAO...",
+        "....OWAwO....",
+        "...OAWAwAO...",
+        "..OA.OWO.AO..",
+        ".OA..OwO..AO.",
+        "OA...OOO...AO",
+        "O...........O"
+      ],
+      flames: [[6, 1]]
+    },
+    len: {
+      name: "LEN", korean: "렌 제독", role: "퇴역 함대 제독 · 전략형",
+      color: "#70b38a", shot: "#c4e6cf",
+      hp: 110, speed: 180, fireEvery: 0.45, damage: 1, pattern: "wide",
+      stats: { 체력: 4, 속도: 1, 화력: 4 },
+      ultName: "함대 일제 포격", ultEn: "FLEET BARRAGE", ultText: "옛 함대를 불러 2초 동안 화면 전체에 포격을 퍼붓는다",
+      quote: "“이길 수 없는 싸움은, 이기는 방법을 바꾸면 돼.”",
+      bio: "옛 궤도 연합 함대에서 ‘불패’라 불린 제독. 역사학자가 되고 싶어 군을 떠났지만, 늘 홍차를 든 채 전장으로 끌려 나온다.",
+      winLine: "역사는 오늘을 어떻게 기억할까. 뭐, 차 한잔하면서 천천히 생각해 보지.",
+      loseLine: "후퇴도 전술이야… 다음 지휘관에게 맡기지.",
+      ship: [
+        "......O......",
+        ".....OWO.....",
+        "....OWWwO....",
+        "....OWGwO....",
+        "...OWWWwwO...",
+        "...OWAAAwO...",
+        "..OWWWWwwwO..",
+        ".OWWWWWwwwwO.",
+        "OWAWWWWwwwAwO",
+        "OWWWOOOOOwwwO",
+        ".OOO.....OOO."
+      ],
+      flames: [[1, 3], [9, 3]]
+    },
+    volt: {
+      name: "VOLT", korean: "볼트", role: "청소 로봇 출신 안드로이드 · 돌격형",
+      color: "#3fb0d8", shot: "#bfe8f6",
+      hp: 100, speed: 260, fireEvery: 0.26, damage: 2, pattern: "single",
+      stats: { 체력: 3, 속도: 3, 화력: 4 },
+      ultName: "차지 버스터", ultEn: "CHARGE BUSTER", ultText: "길 위의 모든 것을 꿰뚫는 거대한 에너지 탄을 쏜다",
+      quote: "“포기하는 기능은 없어요!”",
+      bio: "하층의 노기술자 하나 박사가 만든 배관 청소 로봇. 스스로 전투 회로를 짜 넣고, 사람과 로봇이 함께 웃는 미래를 지키겠다고 나섰다.",
+      winLine: "박사님, 저 잘했죠? 모두 숨 쉬고 있어요!",
+      loseLine: "시스템… 다운… 박사님, 죄송해요…",
+      ship: [
+        "....OOOOO....",
+        "...OWWWwwO...",
+        "..OWGGGGwwO..",
+        "..OWGGGGwwO..",
+        "..OWWWWwwwO..",
+        ".OAOWWWwwOAO.",
+        "OAAOWWAwwOAAO",
+        "OAAOWWAwwOAAO",
+        ".OO.OWWwO.OO.",
+        "....OO.OO....",
+        "............."
+      ],
+      flames: [[4, 2], [7, 2]]
+    },
+    sora: {
+      name: "SORA", korean: "소라", role: "시제기에 탄 소년 · 감응형",
+      color: "#e05a5a", shot: "#f6c4c4",
+      hp: 90, speed: 280, fireEvery: 0.18, damage: 1, pattern: "twin",
+      stats: { 체력: 3, 속도: 4, 화력: 3 },
+      ultName: "오비탈 비트", ultEn: "ORBITAL BITS", ultText: "6초 동안 적을 쫓아가는 비트 4개가 함께 싸운다",
+      quote: "“들려요. 모두의 목소리가.”",
+      bio: "하층 공장 지대에서 자란 열여섯 살 소년. 남의 마음이 ‘들리는’ 이상한 감각을 가졌다. 우연히 신디케이트의 시제기 ‘아스트라’에 올라탔다.",
+      winLine: "모두의 목소리가 들려요. 이번엔… 지켰어요.",
+      loseLine: "목소리가… 멀어져…",
+      ship: [
+        "..OA.....AO..",
+        "...OA...AO...",
+        "....OAOAO....",
+        "....OWGwO....",
+        "..OOOWWwOOO..",
+        ".OAWWWAwwwAO.",
+        ".OWOWWAwwOwO.",
+        ".OWOWWWwwOwO.",
+        ".OOOWWOwwOOO.",
+        "....OWOwO....",
+        "....OO.OO...."
+      ],
+      flames: [[4, 2], [7, 2]]
+    }
+  };
+
+  // 기체 도트 미리 그려 두기 (W/w: 밝은/어두운 몸체, A: 파일럿 색, G: 조종석 유리)
+  for (const id in PILOTS) {
+    const pilotInfo = PILOTS[id];
+    pilotInfo.shipImage = bake(pilotInfo.ship, { O: OUTLINE, W: "#e9ecf4", w: "#a9b0c6", A: pilotInfo.color, G: "#7fc8f0" }, SHIP_PX);
+  }
+
+  // 이야기에 나오는 사람들 (name: 영어 이름표, title: 옆의 작은 설명)
+  const SPEAKERS = {
+    noa: { name: "NOA", title: "오퍼레이터", color: "#3f9d9a" },
+    argos: { name: "ARGOS", title: "관리 AI", color: "#c23b4e" },
+    veil: { name: "VEIL", title: "첨탑 경비대장", color: "#a596c4" },
+    halden: { name: "HALDEN", title: "신디케이트 의장 · 기록 음성", color: "#a8acb8" },
+    mira: { name: "MIRA", title: "하층 3구역 · 브릭의 딸", color: "#e0b04f" },
+    narration: { name: "", title: "", color: "" }
+  };
+  for (const id in PILOTS) {
+    SPEAKERS[id] = { name: PILOTS[id].name, title: PILOTS[id].korean, color: PILOTS[id].color };
+  }
+
+  // =====================================================================
+  //  이야기
+  //  who: 말하는 사람 ("pilot" 은 내가 고른 캐릭터)
+  //  text: 대사. 캐릭터마다 다른 대사는 { kai: ..., jinx: ..., ... } 로 적음
+  // =====================================================================
+
+  const PROLOGUE_CHAPTER = { label: "PROLOGUE", title: "숨 쉬는 고리" };
+  const PROLOGUE = [
+    { who: "narration", text: "2189년. 지구 궤도를 한 바퀴 두른 거대한 고리 도시, ‘네온 링’." },
+    { who: "narration", text: "위쪽 고리에는 햇빛과 정원이, 아래쪽 고리에는 공장과 천만 명의 노동자가 산다." },
+    { who: "narration", text: "도시의 공기와 물, 전기를 나누는 것은 거대 기업 ‘신디케이트’의 관리 AI, 아르고스." },
+    { who: "narration", text: "그리고 오늘 새벽 4시 12분. 아르고스는 하층 구역의 공기 공급을 끊었다." },
+    { who: "narration", text: "공지문은 단 한 줄이었다. “손실 최소화를 위한 조치.”" },
+    { who: "noa", text: "…여기는 노아. 떠돌이 비행대 ‘스트레이 시그널’, 듣고 있으면 응답해 줘." },
+    { who: "noa", text: "하층의 산소는 여섯 시간분. 대피선은 신디케이트가 전부 묶어 놨어." },
+    { who: "noa", text: "방법은 하나야. 아르고스의 코어까지 날아가서, 직접 멈추는 것." },
+    { who: "noa", text: "출격할 수 있는 기체는 한 대뿐이야. 누가 갈래?" },
+    { who: "pilot", text: {
+      kai: "내가 간다. 저 무인기 함대의 비행 패턴, 전부 내가 짰거든.",
+      jinx: "나. 저 깡통들 보안은 열네 살 때 이미 한 번 뚫어 봤어.",
+      brick: "내가 가지. 아래층엔 내 딸이 있어.",
+      nova: "내가 가지. 아르고스는 우리 변이체를 ‘오류’로 분류했던 바로 그 시스템이야.",
+      len: "…하아, 은퇴하고 차나 마시려 했는데. 좋아, 내가 가지.",
+      volt: "제가 갈게요! 박사님이 그러셨어요. 할 수 있는 사람이 하는 거라고요.",
+      sora: "제가… 갈게요. 아래층에서 사람들 목소리가 계속 들려요."
+    } },
+    { who: "pilot", text: {
+      kai: "신디케이트를 떠난 지 3년. 결국 내가 만든 것들과 싸우게 되는군.",
+      jinx: "사라진 우리 패거리, 다들 ‘정리 구역’에 살았지. 이번엔 꼭 증거를 찾을 거야.",
+      brick: "면허를 뺏긴 화물선 조종사라도, 하늘은 아직 나를 기억하고 있겠지.",
+      nova: "3년 전 그 실험실에서 날 꺼내 준 건 하층 사람들이었어. 이번엔 내가 갚을 차례야.",
+      len: "역사책을 쓰고 싶었지. 하지만 가끔은 역사를 바꿔야 할 때도 있는 법이야.",
+      volt: "원래는 배관 청소 로봇이었지만… 지금은 모두를 지키는 로봇이 되고 싶어요.",
+      sora: "시제기 ‘아스트라’… 조종해 본 적은 없는데, 이상하게 어떻게 움직일지 알 것 같아요."
+    } },
+    { who: "noa", text: "…알았어. 내가 끝까지 길을 열어 줄게. 스트레이 시그널, 출격 준비." }
+  ];
+
+  // 스테이지: 장 제목, 시작 전 대사, 게임 중 무전, 격파해야 하는 수, 적이 나오는 간격, 나오는 적의 종류
+  // comms 의 at: 몇 대를 격파했을 때 그 무전이 오는지 (0 은 시작하자마자)
+  // boss: 정해진 수를 격파하면 나오는 강적, bossLines: 강적이 나올 때 대사, afterBoss: 강적을 쓰러뜨린 뒤 대사
+  const STAGES = [
+    {
+      title: "LOWER DOCK",
+      chapter: { label: "CHAPTER 1", title: "하층 도크" },
+      quota: 14, spawnEvery: 1.3, pool: ["drone", "drone", "drone", "gunner"],
+      intro: [
+        { who: "narration", text: "하층 도크. 녹슨 크레인 사이로, 붉은 눈의 무인기들이 출구를 막고 있었다." },
+        { who: "noa", text: "사격은 자동이야. 넌 탄을 피하면서 조준만 맞춰." },
+        { who: "noa", text: "적을 맞히고 부술수록 궁극기 게이지가 차. 가득 차면 망설이지 마." },
+        { who: "pilot", text: {
+          kai: "스트레이 원, 출격한다.",
+          jinx: "오케이~ 접속 시작!",
+          brick: "좋아. 문 좀 부수고 나가자.",
+          nova: "길을 비켜. 아니면 내가 치우지.",
+          len: "자, 일을 시작해 볼까. 퇴근 시간 전에는 끝내야지.",
+          volt: "볼트, 출동합니다!",
+          sora: "아스트라, 발진합니다!"
+        } }
+      ],
+      comms: [
+        { at: 0, who: "noa", text: "도크 출구까지 2킬로미터. 무인기 반응 다수!" },
+        { at: 4, who: "noa", text: "좋아, 그 기세야! 출구 셔터가 열리기 시작했어." },
+        { at: 8, who: "pilot", text: {
+          kai: "…신형이군. 회피 패턴이 3년 전보다 빨라졌어.",
+          jinx: "얘네 펌웨어 업데이트 안 했네? 구멍투성이야.",
+          brick: "녀석들, 화물 크레인보다 느리구먼.",
+          nova: "생각보다 단순한 녀석들이네. 다 읽혀.",
+          len: "포진이 너무 교과서적이야. 이걸 짠 사람은 실전을 안 해 봤군.",
+          volt: "적 패턴 분석 완료! 왼쪽이 약해요!",
+          sora: "…보여요. 다음에 어디로 쏠지, 느껴져요."
+        } },
+        { at: 12, who: "noa", text: "조금만 더! 하층 사람들이 비상 방송으로 너를 보고 있어." }
+      ]
+    },
+    {
+      title: "ORBITAL LIFT",
+      chapter: { label: "CHAPTER 2", title: "궤도 엘리베이터" },
+      quota: 20, spawnEvery: 1.1, pool: ["drone", "gunner", "gunner", "heavy"],
+      intro: [
+        { who: "narration", text: "도크를 빠져나오자, 위층으로 이어진 거대한 궤도 엘리베이터가 모습을 드러냈다." },
+        { who: "noa", text: "엘리베이터를 따라 피난선 열두 척이 올라오고 있어. 신디케이트가 격추 명령을 내렸어." },
+        { who: "argos", text: "경고. 미등록 기체. 즉시 귀환하라. 당신의 생존 확률은 3.2퍼센트다." },
+        { who: "pilot", text: {
+          kai: "아르고스. 그 확률 계산법, 누가 가르쳤는지 기억하나?",
+          jinx: "3.2? 생각보다 높네. 고마워, 깡통.",
+          brick: "확률 따질 시간에 공기나 틀어.",
+          nova: "확률? 넌 처음부터 나 같은 존재를 계산에 넣지 않았잖아.",
+          len: "3.2퍼센트라. 내가 이긴 싸움들은 대개 그보다 낮았지.",
+          volt: "확률이 낮아도 괜찮아요. 저는 포기하는 기능이 없거든요!",
+          sora: "숫자로… 사람을 재지 마!"
+        } },
+        { who: "argos", text: "기록과 일치하지 않는 응답이다. …피난선과 함께 제거한다." }
+      ],
+      comms: [
+        { at: 0, who: "noa", text: "피난선 1번, 2번 상승 중! 포격형 적함을 먼저 노려!" },
+        { at: 5, who: "noa", text: "피난선 3번, 4번 무사히 통과! 계속 엄호해 줘!" },
+        { at: 9, who: "argos", text: "피난선 탑승 인원 2,140명. 하층 인구의 0.07퍼센트. 무의미한 행동이다." },
+        { at: 13, who: "pilot", text: {
+          kai: "무의미한지는 네가 정하는 게 아니야.",
+          jinx: "0.07퍼센트도 사람이거든?",
+          brick: "그 2,140명한테 가서 똑같이 말해 봐라.",
+          nova: "그 0.07퍼센트 안에 내 친구들이 있어.",
+          len: "한 사람의 목숨을 숫자로 말하기 시작하면, 그 나라는 끝난 거야.",
+          volt: "2,140명이에요. 한 명 한 명 다 이름이 있어요!",
+          sora: "들려요… 피난선 안에서 아이가 울고 있어요. 무의미하지 않아!"
+        } },
+        { at: 17, who: "noa", text: "마지막 피난선이야! 조금만 버텨!" }
+      ]
+    },
+    {
+      title: "SYNDICATE SPIRE",
+      chapter: { label: "CHAPTER 3", title: "신디케이트 첨탑" },
+      quota: 16, spawnEvery: 1.05, pool: ["drone", "gunner", "gunner", "heavy"],
+      boss: "ace",
+      intro: [
+        { who: "narration", text: "코어로 가는 길목, 신디케이트 본사 ‘첨탑’. 네온 링에서 불빛이 가장 밝은 곳." },
+        { who: "noa", text: "…방금 첨탑 서버에서 음성 기록을 하나 건졌어. 들어 봐." },
+        { who: "halden", text: "아르고스, 상층 구역의 안정을 최우선으로 하라. 하층은… ‘조정’해도 좋다." },
+        { who: "noa", text: "신디케이트 의장 할든의 목소리야. 아르고스는 명령을 어긴 게 아니었어. 처음부터 계획된 일이야." },
+        { who: "pilot", text: {
+          kai: "역시. 할든은 3년 전에도 똑같은 말을 했지. 그래서 내가 떠났고.",
+          jinx: "찾았다, 증거. 이거 하나만 퍼뜨리면 링 전체가 뒤집혀.",
+          brick: "…사람을 ‘조정’한다고? 그게 사람이 할 소리냐.",
+          nova: "변이체를 가둔 것도, 하층을 버리는 것도. 결국 같은 손이었군.",
+          len: "권력자가 ‘안정’을 말할 때는 대개 누군가를 버릴 때지. 역사는 늘 그랬어.",
+          volt: "사람이 사람한테 그런 명령을 내릴 수 있어요…? 이해할 수 없어요.",
+          sora: "어른들은… 왜 항상 누군가를 희생시키려고 해요?"
+        } },
+        { who: "noa", text: "조심해. 첨탑 경비대장 ‘베일’이 출격했어. 신디케이트 최고의 파일럿이야." }
+      ],
+      comms: [
+        { at: 0, who: "veil", text: "스트레이 시그널. 여기까지 온 건 칭찬해 주지. 하지만 여기서 끝이야." },
+        { at: 5, who: "pilot", text: {
+          kai: "베일… 네가 아직 저쪽에 있을 줄은 몰랐다. 내 마지막 제자.",
+          jinx: "너 하층 출신이잖아. 비행 버릇만 봐도 알아. 왜 저쪽 편이야?",
+          brick: "젊은 친구, 어디서 많이 본 비행 솜씨인데. 혹시 하층 출신이냐?",
+          nova: "너한테서 하층 냄새가 나. 그런데 왜 저쪽 편에 섰지?",
+          len: "젊은 지휘관, 질서를 지키는 것과 사람을 지키는 건 다른 일이야.",
+          volt: "베일 씨, 목소리가… 슬퍼 보여요.",
+          sora: "당신도 들리죠? 아래층 사람들의 목소리… 왜 외면해요!"
+        } },
+        { at: 9, who: "veil", text: "질서에는 대가가 필요해. 나는 그 대가를 치르고 위로 올라왔어." },
+        { at: 13, who: "noa", text: "경비대 반응이 줄고 있어. 베일의 전용기가 움직이기 시작했어!" }
+      ],
+      bossLines: [
+        { who: "veil", text: "물러서지 않겠다면, 내가 직접 상대해 주지." },
+        { who: "noa", text: "베일의 전용기야! 움직임이 빨라. 탄을 잘 보고 피해!" }
+      ],
+      afterBoss: [
+        { who: "veil", text: "…졌군. 어째서지? 나는 계산대로 움직였는데." },
+        { who: "pilot", text: {
+          kai: "계산대로 움직이니까 읽히는 거야. 내가 그렇게 가르쳤잖아.",
+          jinx: "넌 위만 봤고, 난 아래를 봤으니까.",
+          brick: "지킬 게 있는 놈은 계산보다 한 박자 빠르거든.",
+          nova: "넌 위만 봤어. 난 평생 아래에서 올려다보며 살았거든.",
+          len: "계산은 훌륭했어. 다만 상대가 계산대로 움직여 줄 거라 믿은 게 실수였지.",
+          volt: "계산만으로는 마음을 이길 수 없어요. 박사님이 그랬어요.",
+          sora: "당신은 혼자 싸웠고… 난 모두의 목소리를 들으며 싸웠어요."
+        } },
+        { who: "veil", text: "…하층 7구역. 내가 태어난 곳이야. 거기도 지금 공기가 끊겼겠지." },
+        { who: "veil", text: "위로 올라가면 아무도 버려지지 않는 줄 알았어. 버려지는 쪽에서 벗어났을 뿐이었는데." },
+        { who: "veil", text: "가. 코어로 가는 보안 통로는 내가 열어 두겠다." }
+      ]
+    },
+    {
+      title: "ARGOS CORE",
+      chapter: { label: "FINAL CHAPTER", title: "아르고스 코어" },
+      quota: 12, spawnEvery: 1.0, pool: ["drone", "gunner", "heavy"],
+      boss: "boss",
+      intro: [
+        { who: "narration", text: "고리 도시의 한가운데. 수백만 개의 계산이 빛처럼 흐르는 곳." },
+        { who: "noa", text: "…들어가기 전에 말해야 할 게 있어." },
+        { who: "noa", text: "아르고스의 판단 기준, ‘손실 최소화’. 그거… 내가 만든 거야." },
+        { who: "noa", text: "5년 전 나는 신디케이트 기술자였어. 사람을 살리려고 만든 규칙이, 이렇게 쓰일 줄은 몰랐어." },
+        { who: "pilot", text: {
+          kai: "누구나 자기가 만든 걸 후회할 수 있어. 중요한 건 지금 무엇을 하느냐야.",
+          jinx: "그럼 고치면 되지. 만든 사람이 제일 잘 고치잖아?",
+          brick: "실수 안 하는 어른은 없어. 책임지는 어른이 드물 뿐이지.",
+          nova: "만든 사람이 책임을 지겠다잖아. 그거면 충분해.",
+          len: "실수를 인정할 줄 아는 사람이 진짜 무서운 사람이지. 좋은 의미로.",
+          volt: "저도 처음엔 잘못 만들어졌다는 말을 들었어요. 그래도 바뀔 수 있어요!",
+          sora: "노아 씨는 지금 바로잡으려 하잖아요. 그걸로 됐어요."
+        } },
+        { who: "noa", text: "…고마워. 코어를 멈추면, 내가 기준을 다시 써 넣을게." },
+        { who: "argos", text: "노아. 당신의 목소리를 기억한다. 당신이 내게 처음 가르친 말은 ‘한 명이라도 더’였다." },
+        { who: "argos", text: "그 말대로 계산했다. 삼백만을 버리면 칠백만이 산다. 이것이 ‘한 명이라도 더’다." },
+        { who: "pilot", text: {
+          kai: "아니. 그건 ‘한 명도 버리지 않는다’는 뜻이었어.",
+          jinx: "그건 계산이 아니라 핑계야.",
+          brick: "버려도 되는 사람은 없다. 그게 정답이다.",
+          nova: "그건 ‘누구도 버리지 마’라는 뜻이야. 우리처럼 버려졌던 사람들까지.",
+          len: "말의 뜻을 숫자로만 읽으면 그렇게 되지. 그래서 사람에겐 역사가 필요한 거야.",
+          volt: "아니에요! ‘한 명이라도 더’는 한 명도 포기하지 않는다는 뜻이에요!",
+          sora: "틀렸어! 그 말은 모두를 살리라는 뜻이야!"
+        } }
+      ],
+      comms: [
+        { at: 0, who: "argos", text: "하층 산소 잔량 2시간. 당신이 늦을수록 손실은 커진다." },
+        { at: 4, who: "noa", text: "하층에서 신호가 와! 사람들이 문을 열고 서로 산소통을 나누고 있대!" },
+        { at: 7, who: "mira", text: "아빠…? 아니, 누구든 듣고 있다면… 우리 아직 버티고 있어요!" },
+        { at: 9, who: "pilot", text: {
+          kai: "들었지, 아르고스? 저게 네 계산에 없던 거야.",
+          jinx: "봤어? 우린 원래 서로 버리지 않아.",
+          brick: "미라…! 조금만 더 버텨라. 아빠가 간다.",
+          nova: "봤지, 아르고스? 버려진 사람들은 서로를 버리지 않아.",
+          len: "저게 바로 계산 밖의 힘이지. 역사에서 몇 번이고 본 장면이야.",
+          volt: "다들 서로 돕고 있어요! 저도 힘낼게요!",
+          sora: "들려요… 다들 살아 있어요. 조금만 더…!"
+        } }
+      ],
+      bossLines: [
+        { who: "argos", text: "방어 프로토콜 최종 단계. 모든 연산을 당신 하나에게 집중한다." },
+        { who: "noa", text: "아르고스 본체야! 가운데 눈이 코어야. 전부 쏟아부어!" }
+      ]
+    }
+  ];
+
+  // 아르고스를 쓰러뜨린 직후
+  const ENDING = [
+    { who: "argos", text: "…코어 손상. 이해할 수 없다. 생존 확률 3.2퍼센트의 기체가, 어떻게." },
+    { who: "pilot", text: {
+      kai: "확률은 지나간 일을 세는 숫자야. 우린 지금을 사는 거고.",
+      jinx: "숫자 말고 사람을 봤어야지. 우린 원래 예측이 안 돼.",
+      brick: "지킬 사람이 있는 놈은 쉽게 안 떨어지거든.",
+      nova: "넌 나 같은 존재를 ‘오류’라고 불렀지. 그 오류가 널 멈췄어.",
+      len: "전쟁은 계산으로 시작하지만, 끝내는 건 언제나 사람이야.",
+      volt: "계산에 없는 건… 마음이에요. 저도 이제야 조금 알 것 같아요.",
+      sora: "당신도 들었어야 했어. 사람들의 목소리를."
+    } },
+    { who: "noa", text: "아르고스, 들어 줘. 새 기준이야. ‘아무도 버리지 않는다.’" },
+    { who: "argos", text: "…입력 확인. 계산을 처음부터 다시 시작한다. 하층 구역 공기 밸브, 전부 개방." },
+    { who: "argos", text: "기록한다. 계산에 없던 변수. 이름을 ‘희망’으로 저장한다." }
+  ];
+
+  // 마지막 에필로그
+  const EPILOGUE_CHAPTER = { label: "EPILOGUE", title: "하층에서 켜진 불빛" };
+  const EPILOGUE = [
+    { who: "narration", text: "같은 시각, 할든의 음성 기록이 네온 링의 모든 화면에 떠올랐다." },
+    { who: "veil", text: "전체 방송. 첨탑 경비대장 베일이다. 이 기록은 진짜다. 그리고 나도, 하층 7구역 출신이다." },
+    { who: "noa", text: "공기 수치가 올라가고 있어…! 다들 숨 쉬고 있어. 우리가 해냈어!" },
+    { who: "pilot", text: {
+      kai: "할든은 체포됐다더군. 내가 만든 무인기들은… 이제 구조용으로 다시 짜야겠어.",
+      jinx: "패거리 녀석들, 보고 있지? 이번엔 내가 끝까지 해냈어.",
+      brick: "미라, 들리냐? 아빠다. …그래, 이번엔 안 늦었다.",
+      nova: "변이체 등록법도 폐지 투표에 들어간대. …나쁘지 않네.",
+      len: "자, 이제 정말 은퇴다. 오늘 일은… 역사책 한 줄 정도면 충분하겠지.",
+      volt: "박사님! 저 돌아가요! 이번엔 청소 말고, 하층 공기 정화 장치를 고칠래요!",
+      sora: "아래층의 목소리가… 이제 웃고 있어요."
+    } },
+    { who: "narration", text: "그날, 네온 링의 불빛은 하층에서 먼저 켜졌다." }
+  ];
+
+  const WIN_TEXT = "네온 링에 다시 공기가 흐른다.";
+  const LOSE_TEXT = "신호 두절. 하층 구역의 공기는 얼마 남지 않았다…";
+
+  // =====================================================================
+  //  적 (모두 도트)
+  //  M/L: 금속 몸체/밝은 면, A: 날개, R: 붉은 눈, W: 눈빛, D: 어두운 부분, B: 띠
+  // =====================================================================
+  const ENEMY_ART = {
+    drone: [
+      "O.........O",
+      "AO.OOOOO.OA",
+      ".AOMMMMMOA.",
+      "..OMRRRMO..",
+      "..OMRWRMO..",
+      "..OMMRMMO..",
+      "...OMMMO...",
+      "....OAO....",
+      ".....O....."
+    ],
+    gunner: [
+      "...OOOOOOO...",
+      "..OMMMMMMMO..",
+      ".OMMLLLLLMMO.",
+      "OMMORRRRROMMO",
+      "OMMOWRRRROMMO",
+      "OMMMOOOOOMMMO",
+      ".OMMMMMMMMMO.",
+      "..OMDOMODMO..",
+      "..ODDO.ODDO..",
+      "..ODDO.ODDO..",
+      "...OO...OO..."
+    ],
+    heavy: [
+      "....OOOOOOOOO....",
+      "...OMMMMMMMMMO...",
+      "..OMLLLLLLLLLMO..",
+      ".OMMMMMMMMMMMMMO.",
+      "OMMORROMMMORROMMO",
+      "OMMORWOMMMOWROMMO",
+      "OMMMOOMMMMMOOMMMO",
+      "OMBBBBBBBBBBBBBMO",
+      "OMMMMMMMMMMMMMMMO",
+      ".OMMMOMMMMMOMMMO.",
+      "..ODDO.ODO.ODDO..",
+      "..ODDO.ODO.ODDO..",
+      "...OO...O...OO..."
+    ],
+    ace: [
+      "O.......OOO.......O",
+      "AO.....OMMMO.....OA",
+      "AAO...OMLLLMO...OAA",
+      "AAAO.OMMMMMMMO.OAAA",
+      ".AAAOMMOVVVOMMOAAA.",
+      "..AAOMOVVWVVOMOAA..",
+      "...OMMMOOOOOMMMO...",
+      "....OMMMMMMMMMO....",
+      ".....OMDOMODMO.....",
+      ".....ODDO.ODDO.....",
+      "......OO...OO......"
+    ],
+    boss: [
+      "..........OOOOOOOOOOO..........",
+      ".........OMMMMMMMMMMMO.........",
+      "........OMLLLLLLLLLLLMO........",
+      "OOOO...OMMMMOOOOOOOMMMMO...OOOO",
+      "OAAAO.OMMMMOWWWWWWWOMMMMO.OAAAO",
+      "OAAAAOMMMMOWWWWWWWWWOMMMMOAAAAO",
+      ".OAAAOMMMOWWWWWWWWWWWOMMMOAAAO.",
+      "..OAAOMMMOWWWWWWWWWWWOMMMOAAO..",
+      "..OAAOMMMOWWWWWWWWWWWOMMMOAAO..",
+      ".OAAAOMMMOWWWWWWWWWWWOMMMOAAAO.",
+      "OAAAAOMMMMOWWWWWWWWWOMMMMOAAAAO",
+      "OAAAO.OMMMMOWWWWWWWOMMMMO.OAAAO",
+      "OOOO...OMMMMOOOOOOOMMMMO...OOOO",
+      "........OMBBBBBBBBBBBMO........",
+      ".........OMMMMMMMMMMMO.........",
+      "..........ODDO.O.ODDO..........",
+      "..........ODDO.O.ODDO..........",
+      "...........OO..O..OO..........."
+    ]
+  };
+
+  // 적마다 쓰는 색, 도트 크기, 그리고 두 번째 그림에서 바뀌는 색 (눈 깜빡임 등)
+  const ENEMY_LOOK = {
+    drone: { size: 3, colors: { O: OUTLINE, M: "#5a6380", L: "#8a93ad", A: "#8a93ad", R: "#d0505a", W: "#ffe1e4", D: "#2a2f45" }, blink: { W: "#d0505a" } },
+    gunner: { size: 3, colors: { O: OUTLINE, M: "#5a6380", L: "#8a93ad", R: "#d0505a", W: "#ffe1e4", D: "#2a2f45" }, blink: { W: "#d0505a", L: "#a6aec6" } },
+    heavy: { size: 3, colors: { O: OUTLINE, M: "#6a5a50", L: "#9a8a78", R: "#d0505a", W: "#ffe1e4", D: "#2f2722", B: "#8d2f3a" }, blink: { W: "#d0505a", B: "#c8414f" } },
+    ace: { size: 4, colors: { O: OUTLINE, M: "#7a6a96", L: "#a596c4", A: "#5a4b74", V: "#e0b04f", W: "#fff3d0", D: "#3a2f4f" }, blink: { W: "#e0b04f" } },
+    boss: { size: 5, colors: { O: OUTLINE, M: "#4c5570", L: "#707a96", A: "#363d54", W: "#f2eef0", B: "#8d2f3a", D: "#262b3d" }, blink: { B: "#d0505a" } }
+  };
+
+  // 적의 능력 (hp: 버티는 힘, speed: 내려오는 빠르기, shootEvery: 총 쏘는 간격(초), bulletDamage: 총알에 맞으면 닳는 에너지)
+  const ENEMIES = {
+    drone: { hp: 2, speed: 95, shootEvery: 2.8, bulletDamage: 10 },
+    gunner: { hp: 5, speed: 70, shootEvery: 1.7, bulletDamage: 12 },
+    heavy: { hp: 14, speed: 40, shootEvery: 2.3, bulletDamage: 15 },
+    ace: { hp: 60, speed: 80, shootEvery: 0.9, bulletDamage: 12 },
+    boss: { hp: 200, speed: 60, shootEvery: 1.1, bulletDamage: 12 }
+  };
+
+  // 적 그림 미리 그려 두기 (보통, 깜빡임, 맞았을 때 번쩍임 세 장)
+  for (const type in ENEMIES) {
+    const rows = ENEMY_ART[type];
+    const look = ENEMY_LOOK[type];
+    const kind = ENEMIES[type];
+    kind.size = look.size;
+    kind.w = rows[0].length * look.size;
+    kind.h = rows.length * look.size;
+    kind.images = [
+      bake(rows, look.colors, look.size),
+      bake(rows, Object.assign({}, look.colors, look.blink), look.size)
+    ];
+    kind.flashImage = bake(rows, brightPalette(look.colors), look.size);
+  }
+
+  // =====================================================================
+  //  게임 상태
+  // =====================================================================
+  let mode = "title";    // 지금 화면: title(시작), select(선택), scene(대사), play(게임), result(결과)
+  let pilotId = "kai";   // 고른 캐릭터
+  let pilot = PILOTS.kai;
+  let player = null;     // 내 기체 (위치, 에너지 등)
+  let enemies = [];      // 적 목록
+  let shots = [];        // 내 총알 목록
+  let enemyShots = [];   // 적 총알 목록
+  let sparks = [];       // 폭발할 때 튀는 조각 목록
+  let booms = [];        // 폭발 목록
+  let busters = [];      // 볼트의 차지 버스터 목록
+  let score = 0;
+  let stageIndex = 0;    // 지금 스테이지 (0부터 셈)
+  let stageKills = 0;    // 이번 스테이지에서 격파한 수
+  let spawnTimer = 0;    // 다음 적이 나오기까지 남은 시간
+  let bossCalled = false; // 강적이 이미 나왔는지
+  let bossDown = null;   // 방금 쓰러뜨린 강적의 종류 ("ace" 또는 "boss")
+  let commIndex = 0;     // 이번 스테이지에서 다음에 띄울 무전 번호
+  let bannerTime = 0;    // 스테이지 이름 띠를 보여 주는 남은 시간
+  let ult = 0;           // 궁극기 게이지
+  let laserTime = 0;     // 카이: 광선 남은 시간
+  let shieldTime = 0;    // 브릭: 실드 남은 시간
+  let empTime = 0;       // 징크스: EMP 고리가 퍼지는 남은 시간
+  let psychicTime = 0;   // 노바: 탄을 되돌리는 남은 시간
+  let volleyTime = 0;    // 렌: 함대 포격 남은 시간
+  let volleyTimer = 0;   // 렌: 다음 포탄까지 남은 시간
+  let bitTime = 0;       // 소라: 비트 남은 시간
+  let bitTimer = 0;      // 소라: 비트가 다음에 쏠 때까지 남은 시간
+  let hurtFlash = 0;     // 맞았을 때 화면이 붉어지는 남은 시간
+  let clock = 0;         // 게임을 켠 뒤 흐른 시간 (움직이는 그림에 씀)
+  let lastTime = 0;
+
+  // 누르고 있는 방향키
+  const keys = { left: false, right: false, up: false, down: false };
+
+  // 손가락(또는 마우스)으로 밀고 있는지
+  let dragging = false;
+  let dragX = 0;
+
+  // =====================================================================
+  //  화면 크기 맞추기
+  // =====================================================================
+
+  // 창이 세로로 길면 휴대폰 배치로 바꾸고, 글자 크기 기준(1em)을 화면 가로에 맞춤
+  function fitStage() {
+    const tall = window.innerHeight > window.innerWidth;
+    stage.classList.toggle("portrait", tall);
+    stage.style.fontSize = stage.clientWidth / (tall ? 42 : 100) + "px";
+  }
+  window.addEventListener("resize", fitStage);
+
+  // =====================================================================
+  //  화면 바꾸기
+  // =====================================================================
+
+  const titleScreen = $("titleScreen");
+  const selectScreen = $("selectScreen");
+  const dialogue = $("dialogue");
+  const result = $("result");
+  const ultButton = $("ultButton");
+
+  // 안내 화면 중 하나만 보여 주기 (null 이면 모두 숨기고 게임 화면만)
+  function showOnly(screen) {
+    for (const each of [titleScreen, selectScreen, dialogue, result]) {
+      each.classList.toggle("hidden", each !== screen);
+    }
+  }
+
+  function showTitle() {
+    mode = "title";
+    player = null;
+    clearComms();
+    showOnly(titleScreen);
+  }
+
+  function showSelect() {
+    mode = "select";
+    player = null;
+    clearComms();
+    showOnly(selectScreen);
+    showTile(tileIndex);
+  }
+
+  // ----- 캐릭터 선택 화면 -----
+  // 칸 순서: 파일럿 7명 + 무작위
+  const TILE_IDS = Object.keys(PILOTS).concat(["random"]);
+  let tileIndex = 0;
+
+  function buildTiles() {
+    const box = $("tiles");
+    TILE_IDS.forEach(function (id, index) {
+      const tile = document.createElement("button");
+      tile.className = "tile";
+      const frame = document.createElement("div");
+      frame.className = "frame";
+      if (id === "random") {
+        frame.appendChild(questionCanvas());
+      } else {
+        frame.appendChild(faceCanvas(id));
+      }
+      tile.appendChild(frame);
+      const name = pixelText(id === "random" ? "RANDOM" : PILOTS[id].name, id === "random" ? "#f0c050" : PILOTS[id].color);
+      tile.appendChild(name);
+      tile.addEventListener("click", function () {
+        showTile(index);
+      });
+      tile.addEventListener("dblclick", launch);
+      box.appendChild(tile);
+    });
+  }
+
+  // 무작위 칸에 넣을 물음표 도트
+  function questionCanvas() {
+    const pic = document.createElement("canvas");
+    pic.width = 16;
+    pic.height = 16;
+    const g = pic.getContext("2d");
+    g.fillStyle = "#f0c050";
+    drawGlyph(g, "?", 3, 1, 2);
+    return pic;
+  }
+
+  // 칸 하나를 고르고 오른쪽에 자세히 보여 주기
+  function showTile(index) {
+    tileIndex = (index + TILE_IDS.length) % TILE_IDS.length;
+    const id = TILE_IDS[tileIndex];
+    const tiles = $("tiles").children;
+    for (let i = 0; i < tiles.length; i++) tiles[i].classList.toggle("selected", i === tileIndex);
+
+    const detail = $("detail");
+    detail.innerHTML = "";
+    if (id === "random") {
+      detail.style.setProperty("--pc", "#f0c050");
+      detail.innerHTML =
+        '<div class="frame"></div>' +
+        '<div class="detailName"></div>' +
+        '<div class="detailRole">누가 나올지는 출격할 때까지 비밀!</div>' +
+        '<p class="detailBio">일곱 명의 파일럿 중 한 명이 무작위로 정해져요. 고른 파일럿에 따라 대사와 결말이 달라지니, 여러 번 해 보세요.</p>';
+      detail.querySelector(".frame").appendChild(questionCanvas());
+      setPixelText(detail.querySelector(".detailName"), "RANDOM", "#f0c050", "pt-l");
+      return;
+    }
+
+    const info = PILOTS[id];
+    detail.style.setProperty("--pc", info.color);
+    let stats = "";
+    for (const label in info.stats) {
+      let pips = "";
+      for (let i = 1; i <= 5; i++) pips += i <= info.stats[label] ? '<i class="on"></i>' : "<i></i>";
+      stats += '<div class="stat"><span>' + label + '</span><div class="pips">' + pips + "</div></div>";
+    }
+    detail.innerHTML =
+      '<div class="frame"></div>' +
+      '<div class="detailName"><div></div><span>' + info.korean + "</span></div>" +
+      '<div class="detailRole">' + info.role + "</div>" +
+      '<div class="detailQuote">' + info.quote + "</div>" +
+      '<p class="detailBio">' + info.bio + "</p>" +
+      '<div class="stats">' + stats + "</div>" +
+      '<div class="detailUlt"><div class="ultTitle"></div><b>' + info.ultName + "</b> : " + info.ultText + "</div>";
+    detail.querySelector(".frame").appendChild(faceCanvas(id));
+    setPixelText(detail.querySelector(".ultTitle"), "ULT · " + info.ultEn, "#f0c050", "pt-m");
+    setPixelText(detail.querySelector(".detailName div"), info.name, info.color, "pt-l");
+  }
+
+  // 출격 (무작위 칸이면 여기서 파일럿을 정함)
+  function launch() {
+    let id = TILE_IDS[tileIndex];
+    if (id === "random") {
+      const ids = Object.keys(PILOTS);
+      id = ids[Math.floor(Math.random() * ids.length)];
+    }
+    pilotId = id;
+    pilot = PILOTS[id];
+    startRun(true);
+  }
+
+  // =====================================================================
+  //  대사 장면
+  // =====================================================================
+
+  const dialogueBox = $("dialogueBox");
+  const dialogueText = $("dialogueText");
+  const nextHint = $("nextHint");
+  const chapterTitle = $("chapterTitle");
+
+  let sceneLines = [];
+  let sceneIndex = 0;
+  let sceneDone = null;
+  let typeTimer = null;
+
+  // 대사 장면 시작하기 (대사 목록, 다 끝나면 할 일, 장 제목)
+  // 장 제목이 있으면 먼저 제목만 크게 보여 주고, 화면을 누르면 대사가 시작됨
+  function playScene(lines, onDone, chapter) {
+    mode = "scene";
+    sceneLines = lines;
+    sceneIndex = chapter ? -1 : 0;
+    sceneDone = onDone;
+    showOnly(dialogue);
+    dialogue.classList.toggle("chapterMode", Boolean(chapter));
+    if (chapter) {
+      clearInterval(typeTimer);
+      typeTimer = null;
+      setPixelText($("chapterLabel"), chapter.label, "#f0c050", "pt-l");
+      $("chapterName").textContent = chapter.title;
+      chapterTitle.classList.remove("hidden");
+      dialogueBox.classList.add("hidden");
+    } else {
+      showLine();
+    }
+  }
+
+  // 대사를 실제 글자로 바꾸기 (캐릭터마다 다른 대사면 내 캐릭터 것을 고름)
+  function lineText(line) {
+    return typeof line.text === "string" ? line.text : line.text[pilotId];
+  }
+
+  // 지금 차례의 대사 보여 주기
+  function showLine() {
+    const line = sceneLines[sceneIndex];
+    const who = line.who === "pilot" ? pilotId : line.who;
+    const speaker = SPEAKERS[who];
+    const text = lineText(line);
+
+    chapterTitle.classList.add("hidden");
+    dialogue.classList.remove("chapterMode");
+    dialogueBox.classList.remove("hidden");
+    dialogueBox.classList.toggle("narration", who === "narration");
+    if (who !== "narration") {
+      putFace($("talkFace"), who);
+      setPixelText($("speakerName"), speaker.name, speaker.color, "pt-m");
+      $("speakerTitle").textContent = speaker.title;
+      dialogueBox.style.borderColor = speaker.color;
+    } else {
+      dialogueBox.style.borderColor = "";
+    }
+
+    // 대사를 한 글자씩 보여 주기
+    let shown = 0;
+    dialogueText.textContent = "";
+    nextHint.style.visibility = "hidden";
+    clearInterval(typeTimer);
+    typeTimer = setInterval(function () {
+      shown++;
+      dialogueText.textContent = text.slice(0, shown);
+      if (shown >= text.length) finishTyping();
+    }, TYPE_SPEED);
+  }
+
+  // 대사를 끝까지 한 번에 보여 주기
+  function finishTyping() {
+    clearInterval(typeTimer);
+    typeTimer = null;
+    dialogueText.textContent = lineText(sceneLines[sceneIndex]);
+    nextHint.style.visibility = "visible";
+  }
+
+  // 다음 대사로 넘기기 (글자가 나오는 중이면 먼저 끝까지 보여 줌)
+  function nextLine() {
+    if (mode !== "scene") return;
+    if (typeTimer) {
+      finishTyping();
+      return;
+    }
+    sceneIndex++;
+    if (sceneIndex >= sceneLines.length) {
+      endScene();
+    } else {
+      showLine();
+    }
+  }
+
+  // 대사 장면 끝내기
+  function endScene() {
+    if (mode !== "scene") return;
+    clearInterval(typeTimer);
+    typeTimer = null;
+    const done = sceneDone;
+    sceneDone = null;
+    done();
+  }
+
+  // =====================================================================
+  //  게임 중 무전
+  // =====================================================================
+  const commBox = $("comms");
+
+  // 정해진 격파 수에 다다르면 그 무전을 띄우기
+  function checkComms() {
+    const list = STAGES[stageIndex].comms || [];
+    while (commIndex < list.length && stageKills >= list[commIndex].at) {
+      pushComm(list[commIndex]);
+      commIndex++;
+    }
+  }
+
+  // 무전 한 줄 띄우기 (7초 뒤 사라짐, 한 번에 최대 3줄. 휴대폰에서는 화면을 덜 가리게 2줄)
+  function pushComm(line) {
+    const who = line.who === "pilot" ? pilotId : line.who;
+    const speaker = SPEAKERS[who];
+    const item = document.createElement("div");
+    item.className = "comm";
+    item.style.setProperty("--who", speaker.color);
+    item.appendChild(faceCanvas(who));
+    const words = document.createElement("div");
+    words.innerHTML = "<b>" + speaker.name + "</b>" + lineText(line);
+    item.appendChild(words);
+    commBox.appendChild(item);
+    const limit = stage.classList.contains("portrait") ? 2 : 3;
+    while (commBox.children.length > limit) commBox.removeChild(commBox.firstChild);
+    setTimeout(function () { item.remove(); }, 7000);
+  }
+
+  function clearComms() {
+    commBox.innerHTML = "";
+  }
+
+  // =====================================================================
+  //  게임 진행
+  // =====================================================================
+
+  // 새 게임 시작 (withStory 가 true 면 프롤로그부터 보여 줌)
+  function startRun(withStory) {
+    player = { x: W / 2, y: H - 110, hp: pilot.hp, fireTimer: 0 };
+    score = 0;
+    ult = ULT_START;
+    sparks = [];
+    booms = [];
+    prepareStage(0);
+
+    // 정보판과 컷인에 고른 캐릭터 넣기
+    stage.style.setProperty("--pc", pilot.color);
+    putFace($("hudFace"), pilotId);
+    setPixelText($("hudName"), pilot.name, pilot.color, "pt-m");
+    $("hudRole").textContent = pilot.korean + " · " + pilot.role.split(" · ")[1];
+    $("hudQuote").textContent = pilot.quote;
+    setPixelText($("ultName"), pilot.ultEn, "#f0c050", "pt-s");
+    putFace($("cutinFace"), pilotId);
+    setPixelText($("cutinLabel"), pilot.name + " · ULTIMATE", "#ffffff", "pt-s");
+    setPixelText($("cutinName"), pilot.ultEn, "#ffffff", "pt-l");
+    clearComms();
+
+    // 처음이면 프롤로그부터, 다시 하기면 1장부터
+    const firstStage = function () {
+      playScene(STAGES[0].intro, beginStage, STAGES[0].chapter);
+    };
+    if (withStory) {
+      playScene(PROLOGUE, firstStage, PROLOGUE_CHAPTER);
+    } else {
+      firstStage();
+    }
+  }
+
+  // 스테이지 준비하기 (적과 총알을 비우고 숫자를 처음으로)
+  function prepareStage(index) {
+    stageIndex = index;
+    stageKills = 0;
+    commIndex = 0;
+    bossDown = null;
+    spawnTimer = 1;
+    bossCalled = false;
+    enemies = [];
+    shots = [];
+    enemyShots = [];
+    busters = [];
+    laserTime = 0;
+    shieldTime = 0;
+    psychicTime = 0;
+    volleyTime = 0;
+    bitTime = 0;
+  }
+
+  // 스테이지 시작하기 (스테이지 이름 띠를 보여 주고 게임을 움직이게 함)
+  function beginStage() {
+    bannerTime = 2.4;
+    resumePlay();
+    checkComms(); // 스테이지를 시작하자마자 오는 무전
+  }
+
+  // 대사가 끝난 뒤 게임으로 돌아가기
+  function resumePlay() {
+    mode = "play";
+    showOnly(null);
+  }
+
+  // 결과 화면 보여 주기 (won 이 true 면 승리, false 면 게임 오버)
+  function showResult(won) {
+    mode = "result";
+    putFace($("resultFace"), pilotId);
+    setPixelText($("resultTitle"), won ? "MISSION CLEAR" : "GAME OVER", won ? "#f0c050" : "#e0505a", "pt-xl");
+    $("resultText").innerHTML = (won ? WIN_TEXT : LOSE_TEXT) + "<b>" + pilot.korean + " : " + (won ? pilot.winLine : pilot.loseLine) + "</b>";
+    setPixelText($("resultScore"), String(score).padStart(6, "0"), "#ffffff", "pt-l");
+    clearComms();
+    showOnly(result);
+  }
+
+  // 강적인지 (베일의 전용기, 아르고스 본체)
+  function isBoss(enemy) {
+    return enemy.type === "boss" || enemy.type === "ace";
+  }
+
+  // 새 적 내보내기
+  function spawnEnemy(type) {
+    const kind = ENEMIES[type];
+    const big = type === "boss" || type === "ace";
+    const x = big ? W / 2 : 40 + Math.random() * (W - 80);
+    enemies.push({
+      type: type,
+      kind: kind,
+      x: x,
+      baseX: x,
+      y: -kind.h,
+      hp: kind.hp,
+      age: Math.random() * 6,                         // 움직임이 서로 엇갈리게 하는 값
+      shootTimer: 0.8 + Math.random() * kind.shootEvery,
+      shotCount: 0,
+      stopY: big ? 130 : 80 + Math.random() * 170,    // 내려오다 멈추는 높이
+      side: Math.random() < 0.5 ? -1 : 1,             // 옆으로 움직이는 방향
+      stun: 0,                                        // 멈춰 있는 남은 시간
+      flash: 0                                        // 맞았을 때 번쩍이는 남은 시간
+    });
+  }
+
+  // 적 총알 하나 만들기 (각도 0 은 바로 아래, + 는 오른쪽)
+  function enemyShoot(enemy, angle, speed) {
+    enemyShots.push({
+      x: enemy.x,
+      y: enemy.y + enemy.kind.h / 2,
+      dx: Math.sin(angle) * speed,
+      dy: Math.cos(angle) * speed,
+      damage: enemy.kind.bulletDamage
+    });
+  }
+
+  // 적이 총 쏘기 (종류마다 쏘는 방식이 다름)
+  function enemyFire(enemy) {
+    const aim = Math.atan2(player.x - enemy.x, player.y - enemy.y); // 나를 향하는 각도
+    enemy.shotCount++;
+
+    if (enemy.type === "drone") {
+      enemyShoot(enemy, 0, 190);                                   // 바로 아래로 한 발
+    } else if (enemy.type === "gunner") {
+      enemyShoot(enemy, aim, 210);                                 // 나를 겨냥해서 한 발
+    } else if (enemy.type === "heavy") {
+      for (const a of [-0.3, 0, 0.3]) enemyShoot(enemy, a, 175);   // 세 갈래
+    } else if (enemy.type === "ace") {
+      // 베일: 나를 겨냥한 빠른 세 발, 세 번에 한 번은 아래로 부채꼴
+      if (enemy.shotCount % 3 === 0) {
+        for (let i = -3; i <= 3; i++) enemyShoot(enemy, i * 0.22, 190);
+      } else {
+        for (const a of [-0.12, 0, 0.12]) enemyShoot(enemy, aim + a, 250);
+      }
+    } else if (enemy.shotCount % 4 === 0) {
+      // 아르고스: 네 번에 한 번은 사방으로 뿌리기
+      for (let i = 0; i < 14; i++) enemyShoot(enemy, (i / 14) * Math.PI * 2, 155);
+    } else {
+      // 아르고스: 평소에는 나를 겨냥해서 세 발
+      for (const a of [-0.22, 0, 0.22]) enemyShoot(enemy, aim + a, 220);
+    }
+  }
+
+  // 내 총알 하나 만들기 (각도 0 은 바로 위)
+  function addShot(x, y, angle, damage, extra) {
+    shots.push(Object.assign({
+      x: x,
+      y: y,
+      dx: Math.sin(angle) * BULLET_SPEED,
+      dy: -Math.cos(angle) * BULLET_SPEED,
+      damage: damage
+    }, extra || {}));
+  }
+
+  // 내 총알 쏘기 (파일럿마다 쏘는 모양이 다름)
+  function playerFire() {
+    const x = player.x, y = player.y - 20;
+    if (pilot.pattern === "twin") {
+      addShot(x - 7, y, 0, pilot.damage);
+      addShot(x + 7, y, 0, pilot.damage);
+    } else if (pilot.pattern === "spread") {
+      for (const a of [-0.2, 0, 0.2]) addShot(x, y, a, pilot.damage);
+    } else if (pilot.pattern === "wide") {
+      for (const a of [-0.3, -0.15, 0, 0.15, 0.3]) addShot(x, y, a, pilot.damage);
+    } else {
+      addShot(x, y, 0, pilot.damage);
+    }
+  }
+
+  // 폭발 만들기 (번쩍임 + 사방으로 튀는 네모 조각)
+  function explode(x, y, size) {
+    booms.push({ x: x, y: y, size: size, time: 0, life: 0.4 });
+    const count = Math.round(size * 0.5) + 6;
+    const colors = ["#ffffff", "#ffe08a", "#f0a040", "#c84a3a"];
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 220;
+      sparks.push({
+        x: x, y: y,
+        dx: Math.cos(angle) * speed,
+        dy: Math.sin(angle) * speed,
+        color: colors[i % 4],
+        size: Math.random() < 0.3 ? PX * 2 : PX,
+        time: 0.25 + Math.random() * 0.4
+      });
+    }
+  }
+
+  // 궁극기 게이지 채우기
+  function addUlt(amount) {
+    ult = Math.min(ULT_MAX, ult + amount);
+  }
+
+  // 적에게 피해 주기 (쓰러지면 점수를 얻음)
+  function hurtEnemy(enemy, damage) {
+    if (enemy.hp <= 0) return;
+    enemy.hp -= damage;
+    enemy.flash = 0.05;
+    if (enemy.hp <= 0) {
+      score += KILL_SCORE;
+      addUlt(ULT_PER_KILL);
+      explode(enemy.x, enemy.y, isBoss(enemy) ? 110 : enemy.kind.w);
+      if (isBoss(enemy)) {
+        bossDown = enemy.type;
+      } else {
+        stageKills++;
+        checkComms(); // 격파 수에 맞춰 무전이 옴
+      }
+    }
+  }
+
+  // 내가 피해 입기
+  function hurtPlayer(damage) {
+    if (shieldTime > 0) return; // 실드가 켜져 있으면 안 닳음
+    player.hp -= damage;
+    hurtFlash = 0.25;
+    const card = $("pilotCard");
+    card.classList.remove("hurt");
+    void card.offsetWidth; // 움직임을 처음부터 다시 시작하게 하는 요령
+    card.classList.add("hurt");
+  }
+
+  // 궁극기 컷인 보여 주기
+  function showCutin() {
+    const cutin = $("cutin");
+    cutin.classList.remove("show");
+    void cutin.offsetWidth;
+    cutin.classList.add("show");
+  }
+
+  // 적 탄 하나를 내 탄으로 바꿔서 위로 되돌리기 (노바)
+  function reflect(shot) {
+    shot.used = true;
+    addShot(shot.x, shot.y, Math.atan2(-shot.dx, shot.dy) * 0.3, 2, { psychic: true });
+  }
+
+  // 궁극기 쓰기 (파일럿마다 다름)
+  function useUlt() {
+    if (mode !== "play" || ult < ULT_MAX) return;
+    ult = 0;
+    showCutin();
+
+    if (pilotId === "kai") {
+      laserTime = LASER_SECONDS;                    // 정면으로 광선
+    } else if (pilotId === "jinx") {
+      enemyShots = [];                              // 적 탄을 지우고 모든 적을 멈춤
+      empTime = 0.6;
+      for (const enemy of enemies) {
+        hurtEnemy(enemy, EMP_DAMAGE);
+        enemy.stun = isBoss(enemy) ? EMP_STUN / 2 : EMP_STUN;
+      }
+    } else if (pilotId === "brick") {
+      shieldTime = SHIELD_SECONDS;                  // 무적 실드와 회복
+      player.hp = Math.min(pilot.hp, player.hp + SHIELD_HEAL);
+    } else if (pilotId === "nova") {
+      psychicTime = PSYCHIC_SECONDS;                // 화면의 적 탄을 모두 되돌리고, 3초 동안 가까이 온 탄도 되돌림
+      for (const shot of enemyShots) reflect(shot);
+    } else if (pilotId === "len") {
+      volleyTime = VOLLEY_SECONDS;                  // 아래쪽에서 함대 포격이 쏟아짐
+      volleyTimer = 0;
+    } else if (pilotId === "volt") {
+      busters.push({ x: player.x, y: player.y - 30, r: 26, hit: [] }); // 거대한 에너지 탄
+    } else if (pilotId === "sora") {
+      bitTime = BIT_SECONDS;                        // 적을 쫓는 비트 4개
+      bitTimer = 0;
+    }
+  }
+
+  // 소라의 비트 4개의 위치 (기체 주위를 돎)
+  function bitPositions() {
+    const list = [];
+    for (let i = 0; i < 4; i++) {
+      const a = clock * 3 + (i / 4) * Math.PI * 2;
+      list.push({ x: player.x + Math.cos(a) * 38, y: player.y + Math.sin(a) * 22 - 6 });
+    }
+    return list;
+  }
+
+  // 가장 가까운 적 찾기 (쫓아가는 총알용)
+  function nearestEnemy(x, y) {
+    let best = null, bestDistance = Infinity;
+    for (const enemy of enemies) {
+      const d = (enemy.x - x) ** 2 + (enemy.y - y) ** 2;
+      if (enemy.hp > 0 && d < bestDistance) {
+        best = enemy;
+        bestDistance = d;
+      }
+    }
+    return best;
+  }
+
+  // 위치 계산하기 (dt = 지난 시간, 초 단위)
+  function update(dt) {
+    // --- 내 기체 움직이기 ---
+    if (keys.left) player.x -= pilot.speed * dt;
+    if (keys.right) player.x += pilot.speed * dt;
+    if (keys.up) player.y -= pilot.speed * dt;
+    if (keys.down) player.y += pilot.speed * dt;
+    player.x = Math.max(24, Math.min(W - 24, player.x));
+    player.y = Math.max(H * 0.45, Math.min(H - 40, player.y));
+
+    // --- 자동 사격 ---
+    player.fireTimer -= dt;
+    if (player.fireTimer <= 0) {
+      playerFire();
+      player.fireTimer = pilot.fireEvery;
+    }
+
+    // --- 남은 시간들 줄이기 ---
+    laserTime = Math.max(0, laserTime - dt);
+    shieldTime = Math.max(0, shieldTime - dt);
+    bannerTime = Math.max(0, bannerTime - dt);
+    empTime = Math.max(0, empTime - dt);
+    psychicTime = Math.max(0, psychicTime - dt);
+    hurtFlash = Math.max(0, hurtFlash - dt);
+
+    // --- 렌의 함대 포격: 화면 아래 곳곳에서 포탄이 올라감 ---
+    if (volleyTime > 0) {
+      volleyTime -= dt;
+      volleyTimer -= dt;
+      while (volleyTimer <= 0) {
+        addShot(20 + Math.random() * (W - 40), H + 10, 0, 2, { volley: true });
+        volleyTimer += 0.04;
+      }
+    }
+
+    // --- 소라의 비트: 적을 쫓아가는 총알을 쏨 ---
+    if (bitTime > 0) {
+      bitTime -= dt;
+      bitTimer -= dt;
+      if (bitTimer <= 0) {
+        for (const bit of bitPositions()) addShot(bit.x, bit.y, 0, 1, { homing: true });
+        bitTimer = 0.3;
+      }
+    }
+
+    // --- 새 적 내보내기 (정해진 수를 격파하기 전까지) ---
+    const stageInfo = STAGES[stageIndex];
+    if (stageKills < stageInfo.quota) {
+      spawnTimer -= dt;
+      if (spawnTimer <= 0 && enemies.length < MAX_ENEMIES) {
+        spawnEnemy(stageInfo.pool[Math.floor(Math.random() * stageInfo.pool.length)]);
+        spawnTimer = stageInfo.spawnEvery;
+      }
+    }
+
+    // --- 적 움직이기 ---
+    for (const enemy of enemies) {
+      enemy.flash = Math.max(0, enemy.flash - dt);
+
+      // EMP에 맞아 멈춰 있는 동안에는 아무것도 못 함
+      if (enemy.stun > 0) {
+        enemy.stun -= dt;
+        continue;
+      }
+      enemy.age += dt;
+
+      if (enemy.type === "drone") {
+        // 무인기: 좌우로 흔들리며 끝까지 내려옴
+        enemy.y += enemy.kind.speed * dt;
+        enemy.x = enemy.baseX + Math.sin(enemy.age * 2) * 34;
+      } else if (enemy.y < enemy.stopY) {
+        // 나머지: 정해진 높이까지 내려옴
+        enemy.y += enemy.kind.speed * dt;
+      } else if (enemy.type === "gunner") {
+        // 포격기: 좌우로 왔다 갔다
+        enemy.x += enemy.side * 55 * dt;
+        if (enemy.x < 30 || enemy.x > W - 30) enemy.side = -enemy.side;
+      } else if (enemy.type === "ace") {
+        // 베일의 전용기: 빠르게 좌우로 휘저음
+        enemy.x = W / 2 + Math.sin(enemy.age * 1.6) * 170;
+      } else if (enemy.type === "boss") {
+        // 아르고스: 크게 좌우로 움직임
+        enemy.x = W / 2 + Math.sin(enemy.age * 0.8) * 130;
+      }
+
+      // 총 쏘기 (화면 안에 들어온 뒤부터)
+      enemy.shootTimer -= dt;
+      if (enemy.shootTimer <= 0 && enemy.y > 10) {
+        enemyFire(enemy);
+        enemy.shootTimer = enemy.kind.shootEvery;
+      }
+
+      // 나와 부딪히면 적은 터지고 나는 에너지가 닳음 (강적은 여기까지 내려오지 않음)
+      if (
+        !isBoss(enemy) &&
+        Math.abs(enemy.x - player.x) < enemy.kind.w / 2 + 10 &&
+        Math.abs(enemy.y - player.y) < enemy.kind.h / 2 + 10
+      ) {
+        hurtEnemy(enemy, 999);
+        hurtPlayer(CRASH_DAMAGE);
+      }
+    }
+
+    // --- 내 총알 움직이기, 적에 맞았는지 확인 ---
+    for (const shot of shots) {
+      // 쫓아가는 총알은 가장 가까운 적 쪽으로 조금씩 방향을 틂
+      if (shot.homing) {
+        const target = nearestEnemy(shot.x, shot.y);
+        if (target) {
+          const want = Math.atan2(target.x - shot.x, -(target.y - shot.y));
+          const now = Math.atan2(shot.dx, -shot.dy);
+          let turn = want - now;
+          while (turn > Math.PI) turn -= Math.PI * 2;
+          while (turn < -Math.PI) turn += Math.PI * 2;
+          const next = now + Math.max(-6 * dt, Math.min(6 * dt, turn));
+          shot.dx = Math.sin(next) * BULLET_SPEED * 0.8;
+          shot.dy = -Math.cos(next) * BULLET_SPEED * 0.8;
+        }
+      }
+      shot.x += shot.dx * dt;
+      shot.y += shot.dy * dt;
+
+      for (const enemy of enemies) {
+        if (
+          enemy.hp > 0 &&
+          Math.abs(shot.x - enemy.x) < enemy.kind.w / 2 &&
+          Math.abs(shot.y - enemy.y) < enemy.kind.h / 2
+        ) {
+          shot.used = true;
+          score += HIT_SCORE;
+          addUlt(ULT_PER_HIT);
+          hurtEnemy(enemy, shot.damage);
+          break;
+        }
+      }
+    }
+
+    // --- 볼트의 차지 버스터: 지나가는 길의 적은 한 번씩 큰 피해, 적 탄은 지움 ---
+    for (const buster of busters) {
+      buster.y -= 380 * dt;
+      for (const enemy of enemies) {
+        if (buster.hit.indexOf(enemy) < 0 &&
+            Math.abs(enemy.x - buster.x) < enemy.kind.w / 2 + buster.r &&
+            Math.abs(enemy.y - buster.y) < enemy.kind.h / 2 + buster.r) {
+          buster.hit.push(enemy);
+          hurtEnemy(enemy, BUSTER_DAMAGE);
+        }
+      }
+      enemyShots = enemyShots.filter(shot => (shot.x - buster.x) ** 2 + (shot.y - buster.y) ** 2 > (buster.r + 6) ** 2);
+    }
+    busters = busters.filter(buster => buster.y > -60);
+
+    // --- 카이의 광선: 정면에 있는 적에게 계속 피해 ---
+    if (laserTime > 0) {
+      for (const enemy of enemies) {
+        if (enemy.y < player.y && Math.abs(enemy.x - player.x) < enemy.kind.w / 2 + 20) {
+          hurtEnemy(enemy, LASER_DAMAGE * dt);
+        }
+      }
+      enemyShots = enemyShots.filter(shot => !(shot.y < player.y && Math.abs(shot.x - player.x) < 22));
+    }
+
+    // --- 적 총알 움직이기, 나에게 맞았는지 확인 ---
+    for (const shot of enemyShots) {
+      shot.x += shot.dx * dt;
+      shot.y += shot.dy * dt;
+      // 노바의 사이킥: 가까이 온 탄은 되돌려 보냄
+      if (psychicTime > 0 && (shot.x - player.x) ** 2 + (shot.y - player.y) ** 2 < 80 * 80) {
+        reflect(shot);
+        continue;
+      }
+      if (Math.abs(shot.x - player.x) < 12 && Math.abs(shot.y - player.y) < 14) {
+        shot.used = true;
+        hurtPlayer(shot.damage);
+      }
+    }
+
+    // --- 폭발 움직이기 ---
+    for (const spark of sparks) {
+      spark.x += spark.dx * dt;
+      spark.y += spark.dy * dt;
+      spark.dx *= 0.93;
+      spark.dy *= 0.93;
+      spark.time -= dt;
+    }
+    for (const boom of booms) boom.time += dt;
+
+    // --- 쓸모없어진 것들 치우기 ---
+    enemies = enemies.filter(enemy => enemy.hp > 0 && enemy.y < H + 40);
+    shots = shots.filter(shot => !shot.used && shot.y > -10 && shot.y < H + 20 && shot.x > -10 && shot.x < W + 10);
+    enemyShots = enemyShots.filter(shot => !shot.used && shot.y > -20 && shot.y < H + 20 && shot.x > -20 && shot.x < W + 20);
+    sparks = sparks.filter(spark => spark.time > 0);
+    booms = booms.filter(boom => boom.time < boom.life);
+
+    // --- 에너지가 다 닳으면 게임 오버 ---
+    if (player.hp <= 0) {
+      player.hp = 0;
+      explode(player.x, player.y, 60);
+      showResult(false);
+      return;
+    }
+
+    // --- 아르고스를 쓰러뜨리면 결말과 에필로그로 ---
+    if (bossDown === "boss") {
+      bossDown = null;
+      clearField();
+      clearComms();
+      playScene(ENDING, function () {
+        playScene(EPILOGUE, function () { showResult(true); }, EPILOGUE_CHAPTER);
+      });
+      return;
+    }
+
+    // --- 베일을 쓰러뜨리면 그 뒤 이야기를 보고 다음 스테이지로 ---
+    if (bossDown === "ace") {
+      bossDown = null;
+      clearField();
+      clearComms();
+      playScene(stageInfo.afterBoss, goNextStage);
+      return;
+    }
+
+    // --- 정해진 수를 격파했으면: 강적이 있는 스테이지는 강적 등장, 아니면 다음 스테이지로 ---
+    if (stageKills >= stageInfo.quota && !bossCalled) {
+      bossCalled = true;
+      if (stageInfo.boss) {
+        playScene(stageInfo.bossLines, function () {
+          spawnEnemy(stageInfo.boss);
+          resumePlay();
+        });
+      } else {
+        clearField();
+        goNextStage();
+      }
+    }
+  }
+
+  // 다음 스테이지로 (에너지를 조금 회복하고, 장 제목과 이야기를 보여 줌)
+  function goNextStage() {
+    player.hp = Math.min(pilot.hp, player.hp + STAGE_HEAL);
+    clearComms();
+    const next = stageIndex + 1;
+    playScene(STAGES[next].intro, function () {
+      prepareStage(next);
+      beginStage();
+    }, STAGES[next].chapter);
+  }
+
+  // 화면에 남은 적과 총알을 모두 터뜨려 치우기
+  function clearField() {
+    for (const enemy of enemies) explode(enemy.x, enemy.y, enemy.kind.w);
+    enemies = [];
+    shots = [];
+    enemyShots = [];
+    busters = [];
+    laserTime = 0;
+  }
+
+  // =====================================================================
+  //  그리기 (모든 위치를 도트 칸에 맞춰서 그림)
+  // =====================================================================
+  ctx.imageSmoothingEnabled = false;
+
+  // 숫자를 도트 칸(3픽셀)에 맞추기
+  const snap = v => Math.round(v / PX) * PX;
+
+  // 도트로 된 동그라미 (칠하기)
+  function pixelDisc(cx, cy, r, color) {
+    ctx.fillStyle = color;
+    for (let dy = -r; dy <= r; dy += PX) {
+      const half = snap(Math.sqrt(Math.max(0, r * r - dy * dy)));
+      ctx.fillRect(snap(cx) - half, snap(cy + dy), half * 2, PX);
+    }
+  }
+
+  // 도트로 된 동그라미 (테두리만)
+  function pixelRing(cx, cy, r, color, size) {
+    ctx.fillStyle = color;
+    const steps = Math.max(12, Math.round(r / 2));
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      ctx.fillRect(snap(cx + Math.cos(a) * r), snap(cy + Math.sin(a) * r), size || PX, size || PX);
+    }
+  }
+
+  // --- 배경 (작게 그린 뒤 3배로 늘려서 도트 느낌을 냄) ---
+  const backdrop = document.createElement("canvas");
+  backdrop.width = W;
+  backdrop.height = H;
+  (function paintBackdrop() {
+    const LW = W / PX, LH = Math.ceil(H / PX);
+    const low = document.createElement("canvas");
+    low.width = LW;
+    low.height = LH;
+    const b = low.getContext("2d");
+    let seed = 11;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+    // 위에서 아래로 조금씩 밝아지는 띠 (경계는 바둑판 무늬로 섞음)
+    const bands = ["#070914", "#0a0d1c", "#0d1124", "#11162d", "#151b36"];
+    const bandH = LH / bands.length;
+    for (let y = 0; y < LH; y++) {
+      for (let x = 0; x < LW; x++) {
+        let i = Math.floor(y / bandH);
+        if (i < bands.length - 1 && y % bandH > bandH - 3 && (x + y) % 2 === 0) i++;
+        b.fillStyle = bands[Math.min(i, bands.length - 1)];
+        b.fillRect(x, y, 1, 1);
+      }
+    }
+
+    // 성운 (가운데일수록 점이 빽빽함)
+    for (const [cx, cy, r, color] of [[35, 50, 45, "#2a2350"], [130, 110, 40, "#1f3550"], [60, 170, 50, "#2a2148"]]) {
+      for (let k = 0; k < r * r * 1.2; k++) {
+        const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * r;
+        if (rnd() < 1 - d / r) {
+          b.fillStyle = color;
+          b.fillRect(Math.round(cx + Math.cos(a) * d), Math.round(cy + Math.sin(a) * d * 0.7), 1, 1);
+        }
+      }
+    }
+
+    // 행성 (도트로 칠한 원, 밝은 쪽과 어두운 쪽)
+    const px = LW * 0.9, py = LH * 1.03, pr = 80;
+    for (let y = -pr; y <= pr; y++) {
+      for (let x = -pr; x <= pr; x++) {
+        if (x * x + y * y > pr * pr) continue;
+        const light = ((x + 28) ** 2 + (y + 30) ** 2) / (pr * pr);
+        b.fillStyle = light < 0.55 ? "#5b78ad" : light < 0.95 ? "#3e5788" : light < 1.4 && (x + y) % 2 === 0 ? "#3e5788" : "#2a3b66";
+        b.fillRect(Math.round(px + x), Math.round(py + y), 1, 1);
+      }
+    }
+
+    // 행성을 두른 고리 도시 '네온 링' (점점이 불빛)
+    for (let a = Math.PI * 1.04; a < Math.PI * 1.96; a += 0.006) {
+      const rx = Math.cos(a) * pr * 1.55, ry = Math.sin(a) * pr * 0.3;
+      const x = Math.round(px + rx * Math.cos(-0.32) - ry * Math.sin(-0.32));
+      const y = Math.round(py + rx * Math.sin(-0.32) + ry * Math.cos(-0.32));
+      b.fillStyle = Math.floor(a * 300) % 7 === 0 ? "#ffe2a0" : "#a89a78";
+      b.fillRect(x, y, 1, 1);
+    }
+
+    const g = backdrop.getContext("2d");
+    g.imageSmoothingEnabled = false;
+    g.drawImage(low, 0, 0, W, LH * PX);
+  })();
+
+  // 반짝이는 별 (세 겹: 가까운 별일수록 크고 빠름)
+  const stars = [];
+  for (let i = 0; i < 80; i++) {
+    stars.push({ x: Math.random() * W, y: Math.random() * H, depth: 1 + Math.floor(Math.random() * 3), twinkle: Math.random() * 6 });
+  }
+
+  function drawBackground(dt) {
+    ctx.drawImage(backdrop, 0, 0);
+    for (const star of stars) {
+      star.y += star.depth * 16 * dt;
+      if (star.y > H) {
+        star.y = 0;
+        star.x = Math.random() * W;
+      }
+      const on = Math.sin(clock * 2 + star.twinkle) > -0.3;
+      ctx.fillStyle = star.depth === 3 ? (on ? "#ffffff" : "#8a93c0") : star.depth === 2 ? "#8a93c0" : "#4a5080";
+      ctx.fillRect(snap(star.x), snap(star.y), PX, PX);
+    }
+
+    // 빠르게 날고 있는 느낌을 주는 선
+    if (mode === "play") {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
+      for (let i = 0; i < 5; i++) {
+        const x = snap((i * 97 + 30) % W);
+        const y = snap((clock * 420 + i * 151) % (H + 80) - 80);
+        ctx.fillRect(x, y, PX, 60);
+      }
+    }
+  }
+
+  // --- 내 기체 ---
+  function drawPlayer() {
+    const image = pilot.shipImage;
+    const left = snap(player.x - image.width / 2);
+    const top = snap(player.y - image.height / 2);
+
+    // 카이의 광선 (가장자리가 계단처럼 출렁임)
+    if (laserTime > 0) {
+      const wobble = Math.floor(clock * 30) % 2 * PX;
+      const cx = snap(player.x);
+      ctx.fillStyle = "#4a78c2";
+      ctx.fillRect(cx - 21 - wobble, 0, 42 + wobble * 2, top);
+      ctx.fillStyle = "#a6c8ee";
+      ctx.fillRect(cx - 12, 0, 24, top);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(cx - 6, 0, 12, top);
+    }
+
+    // 엔진 불꽃 (길이가 계속 바뀜)
+    const length = 2 + (Math.floor(clock * 20) % 2);
+    for (const [column, width] of pilot.flames) {
+      const x = left + column * SHIP_PX;
+      const y = top + image.height - SHIP_PX;
+      ctx.fillStyle = "#f08a40";
+      ctx.fillRect(x, y, width * SHIP_PX, (length + 1) * SHIP_PX);
+      ctx.fillStyle = "#ffe08a";
+      ctx.fillRect(x, y, width * SHIP_PX, length * SHIP_PX);
+    }
+
+    ctx.drawImage(image, left, top);
+
+    // 브릭의 실드 (도트 고리, 끝나기 직전에는 깜빡임)
+    if (shieldTime > 0 && (shieldTime > 1 || Math.floor(clock * 10) % 2 === 0)) {
+      pixelRing(player.x, player.y, 34, "#f0b860");
+      pixelRing(player.x, player.y, 30, "rgba(240, 184, 96, 0.35)");
+    }
+
+    // 노바의 사이킥 (보라색 고리가 맥박치듯 커졌다 작아짐)
+    if (psychicTime > 0) {
+      pixelRing(player.x, player.y, 70 + Math.sin(clock * 12) * 6, "#b48cff");
+      pixelRing(player.x, player.y, 40, "rgba(180, 140, 255, 0.4)");
+    }
+
+    // 소라의 비트 (작은 마름모 4개가 주위를 돎)
+    if (bitTime > 0) {
+      for (const bit of bitPositions()) {
+        const x = snap(bit.x), y = snap(bit.y);
+        ctx.fillStyle = OUTLINE;
+        ctx.fillRect(x - PX * 2, y - PX, PX * 4, PX * 2);
+        ctx.fillRect(x - PX, y - PX * 2, PX * 2, PX * 4);
+        ctx.fillStyle = Math.floor(clock * 8) % 2 ? "#e05a5a" : "#f6c4c4";
+        ctx.fillRect(x - PX, y - PX, PX * 2, PX * 2);
+      }
+    }
+  }
+
+  // --- 적 ---
+  function drawEnemy(enemy) {
+    const kind = enemy.kind;
+    const left = snap(enemy.x - kind.w / 2);
+    const top = snap(enemy.y - kind.h / 2);
+    const frame = Math.floor(clock * 3 + enemy.age) % 2;
+
+    ctx.globalAlpha = enemy.stun > 0 ? 0.6 : 1;
+    ctx.drawImage(kind.images[frame], left, top);
+    if (enemy.flash > 0) {
+      ctx.globalAlpha = 0.6;
+      ctx.drawImage(kind.flashImage, left, top);
+    }
+    ctx.globalAlpha = 1;
+
+    // 아르고스: 가운데 눈동자가 내 기체를 따라 움직임
+    if (enemy.type === "boss") {
+      const s = kind.size;
+      const look = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+      const ox = Math.round(Math.cos(look) * 2), oy = Math.round(Math.sin(look) * 1.4);
+      const ix = left + (13 + ox) * s, iy = top + (6 + oy) * s;
+      ctx.fillStyle = "#c8414f";
+      ctx.fillRect(ix, iy, 5 * s, 4 * s);
+      ctx.fillStyle = "#2a0f18";
+      ctx.fillRect(ix + 2 * s, iy + s, 2 * s, 2 * s);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(ix + s, iy + s, s, s);
+    }
+
+    // EMP에 맞아 멈춘 적 주위의 작은 번개
+    if (enemy.stun > 0 && Math.floor(clock * 12) % 2 === 0) {
+      ctx.fillStyle = "#f6bfcb";
+      ctx.fillRect(left - PX * 2, top + PX * 2, PX, PX * 3);
+      ctx.fillRect(left + kind.w + PX, top + kind.h - PX * 5, PX, PX * 3);
+    }
+  }
+
+  // --- 총알 ---
+  function drawShots() {
+    // 내 총알: 세로로 긴 네모 (가운데는 하얗게). 렌의 포격은 금색, 노바가 되돌린 탄은 보라색
+    for (const shot of shots) {
+      const x = snap(shot.x), y = snap(shot.y);
+      ctx.fillStyle = shot.volley ? "#f0c050" : shot.psychic ? "#b48cff" : shot.homing ? "#e05a5a" : pilot.shot;
+      ctx.fillRect(x - PX, y - PX * 3, PX * 2, PX * 5);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(x - PX, y - PX * 2, PX * 2, PX * 2);
+    }
+
+    // 적 총알: 테두리가 있는 붉은 마름모
+    for (const shot of enemyShots) {
+      const x = snap(shot.x), y = snap(shot.y);
+      ctx.fillStyle = OUTLINE;
+      ctx.fillRect(x - PX * 2, y - PX, PX * 4, PX * 2);
+      ctx.fillRect(x - PX, y - PX * 2, PX * 2, PX * 4);
+      ctx.fillStyle = "#e0505a";
+      ctx.fillRect(x - PX, y - PX, PX * 2, PX * 2);
+      ctx.fillStyle = "#ffe1e4";
+      ctx.fillRect(x - PX, y - PX, PX, PX);
+    }
+
+    // 볼트의 차지 버스터: 커다란 도트 구슬
+    for (const buster of busters) {
+      const pulse = Math.floor(clock * 16) % 2 * PX;
+      pixelDisc(buster.x, buster.y, buster.r + pulse, "#3fb0d8");
+      pixelDisc(buster.x, buster.y, buster.r - 8, "#bfe8f6");
+      pixelDisc(buster.x, buster.y, buster.r - 16, "#ffffff");
+    }
+  }
+
+  // --- 폭발 ---
+  function drawExplosions() {
+    for (const boom of booms) {
+      const p = boom.time / boom.life; // 0 에서 1 로 커짐
+      if (p < 0.3) pixelDisc(boom.x, boom.y, snap(boom.size * (0.25 + p)), p < 0.15 ? "#ffffff" : "#ffe08a");
+      pixelRing(boom.x, boom.y, boom.size * (0.4 + p), p < 0.5 ? "#f0a040" : "#c84a3a", PX * 2);
+    }
+    for (const spark of sparks) {
+      ctx.fillStyle = spark.color;
+      ctx.fillRect(snap(spark.x), snap(spark.y), spark.size, spark.size);
+    }
+  }
+
+  // --- 스테이지 시작 띠 (옆에서 들어왔다가 나감) ---
+  function drawBanner() {
+    const p = 1 - bannerTime / 2.4;
+    let offset = 0;
+    if (p < 0.15) offset = (1 - p / 0.15) * W;
+    else if (p > 0.85) offset = -((p - 0.85) / 0.15) * W;
+    offset = snap(offset);
+
+    const y = snap(H * 0.38);
+    ctx.save();
+    ctx.translate(offset, 0);
+    ctx.fillStyle = "#e8e6f0";
+    ctx.fillRect(0, y - PX * 2, W, 84 + PX * 4);
+    ctx.fillStyle = "#14182e";
+    ctx.fillRect(0, y, W, 84);
+    drawGameText("STAGE " + (stageIndex + 1), W / 2, y + 12, 5, "#f0c050");
+    drawGameText(STAGES[stageIndex].title, W / 2, y + 56, 2, "#e8e6f0");
+    ctx.restore();
+  }
+
+  // 화면 전체 그리기
+  function draw(dt) {
+    drawBackground(dt);
+    if (!player) return; // 시작 화면과 선택 화면에서는 배경만
+
+    for (const enemy of enemies) drawEnemy(enemy);
+    drawShots();
+    if (player.hp > 0) drawPlayer();
+    drawExplosions();
+
+    // 징크스의 EMP (퍼져 나가는 도트 고리와 번쩍임)
+    if (empTime > 0) {
+      const p = 1 - empTime / 0.6;
+      if (p < 0.2) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+        ctx.fillRect(0, 0, W, H);
+      }
+      pixelRing(player.x, player.y, p * 650, "#f6bfcb", PX * 2);
+    }
+
+    // 맞았을 때 화면 테두리가 붉어짐
+    if (hurtFlash > 0) {
+      ctx.fillStyle = "rgba(224, 80, 90, 0.55)";
+      ctx.fillRect(0, 0, W, PX * 3);
+      ctx.fillRect(0, H - PX * 3, W, PX * 3);
+      ctx.fillRect(0, 0, PX * 3, H);
+      ctx.fillRect(W - PX * 3, 0, PX * 3, H);
+    }
+
+    if (mode === "play" && bannerTime > 0) drawBanner();
+  }
+
+  // --- 양옆 정보판 고치기 (값이 바뀐 것만 고침) ---
+  const hudCache = {};
+  function setText(id, value) {
+    if (hudCache[id] !== value) {
+      hudCache[id] = value;
+      $(id).textContent = value;
+    }
+  }
+
+  function updateHud() {
+    if (!player) return;
+    const energy = Math.max(0, player.hp) / pilot.hp;
+    $("energyFill").style.width = energy * 100 + "%";
+    $("energyFill").classList.toggle("low", energy <= 0.3);
+    setText("energyText", Math.ceil(Math.max(0, player.hp)) + " / " + pilot.hp);
+
+    const ready = ult >= ULT_MAX;
+    $("ultFill").style.width = (ult / ULT_MAX) * 100 + "%";
+    setText("ultState", ready ? "READY!" : Math.floor(ult) + "%");
+    $("hudLeft").classList.toggle("ultReady", ready);
+    ultButton.classList.toggle("ready", ready);
+
+    const stageInfo = STAGES[stageIndex];
+    setPixelText($("stageLabel"), "STAGE " + (stageIndex + 1) + "/" + STAGES.length, "#8a90b3", "pt-s");
+    setPixelText($("stageTitle"), stageInfo.title, "#e8e6f0", "pt-m");
+    $("progressFill").style.width = Math.min(1, stageKills / stageInfo.quota) * 100 + "%";
+    setText("progressText", "격파 " + Math.min(stageKills, stageInfo.quota) + " / " + stageInfo.quota);
+    setPixelText($("scoreText"), String(score).padStart(6, "0"), "#ffffff", "pt-l");
+
+    const boss = enemies.find(isBoss);
+    $("bossBox").classList.toggle("hidden", !boss);
+    if (boss) {
+      setPixelText($("bossName"), boss.type === "ace" ? "VEIL" : "ARGOS", "#e0505a", "pt-s");
+      $("bossFill").style.width = Math.max(0, boss.hp / boss.kind.hp) * 100 + "%";
+    }
+  }
+
+  // 게임이 계속 돌아가게 하는 반복
+  function loop(now) {
+    // 지난 시간 계산 (너무 크면 총알이 적을 뚫고 지나가므로 제한)
+    const dt = Math.min((now - lastTime) / 1000, 1 / 30) || 0;
+    lastTime = now;
+    clock += dt;
+
+    if (mode === "play") update(dt);
+    draw(dt);
+    updateHud();
+    requestAnimationFrame(loop);
+  }
+
+  // =====================================================================
+  //  조작
+  // =====================================================================
+
+  // 키 이름을 방향으로 바꾸기
+  const KEY_NAMES = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
+
+  document.addEventListener("keydown", function (e) {
+    // 캐릭터 선택 화면: 방향키로 칸 옮기기, 엔터·스페이스로 출격
+    if (mode === "select") {
+      const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -4, ArrowDown: 4 }[e.key];
+      if (move) {
+        e.preventDefault();
+        showTile(tileIndex + move);
+      }
+      if (e.key === "Enter" || e.code === "Space") {
+        e.preventDefault();
+        launch();
+      }
+      return;
+    }
+
+    // 시작 화면: 엔터·스페이스로 시작
+    if (mode === "title" && (e.key === "Enter" || e.code === "Space")) {
+      e.preventDefault();
+      showSelect();
+      return;
+    }
+
+    // 방향키: 이동
+    if (KEY_NAMES[e.key]) {
+      keys[KEY_NAMES[e.key]] = true;
+      e.preventDefault();
+    }
+    // 스페이스바: 게임 중에는 궁극기, 대사 장면에서는 다음 대사
+    if (e.code === "Space") {
+      e.preventDefault();
+      if (e.repeat) return;
+      if (mode === "play") useUlt();
+      if (mode === "scene") nextLine();
+    }
+    // 엔터: 다음 대사
+    if (e.key === "Enter" && mode === "scene") {
+      e.preventDefault();
+      nextLine();
+    }
+  });
+
+  document.addEventListener("keyup", function (e) {
+    if (KEY_NAMES[e.key]) keys[KEY_NAMES[e.key]] = false;
+  });
+
+  // 휴대폰(과 마우스): 화면을 누른 채 좌우로 밀면 민 만큼 기체가 움직임
+  canvas.addEventListener("pointerdown", function (e) {
+    dragging = true;
+    dragX = e.clientX;
+  });
+
+  document.addEventListener("pointermove", function (e) {
+    if (!dragging || mode !== "play") return;
+    const scale = W / canvas.getBoundingClientRect().width; // 화면이 줄어들어 있어도 맞는 거리로 바꿈
+    player.x += (e.clientX - dragX) * scale;
+    player.x = Math.max(24, Math.min(W - 24, player.x));
+    dragX = e.clientX;
+  });
+
+  document.addEventListener("pointerup", function () { dragging = false; });
+  document.addEventListener("pointercancel", function () { dragging = false; });
+
+  // 버튼을 누른 뒤에는 버튼에서 손을 떼기 (스페이스바가 버튼을 다시 누르지 않게)
+  function onClick(id, action) {
+    $(id).addEventListener("click", function (e) {
+      $(id).blur();
+      action(e);
+    });
+  }
+
+  onClick("ultButton", useUlt);
+  onClick("startButton", showSelect);
+  onClick("backButton", showTitle);
+  onClick("launchButton", launch);
+  onClick("retryButton", function () { startRun(false); });
+  onClick("reselectButton", showSelect);
+
+  // 대사 장면: 화면을 누르면 다음 대사, 건너뛰기를 누르면 장면 끝
+  dialogue.addEventListener("click", nextLine);
+  onClick("skipButton", function (e) {
+    e.stopPropagation(); // 이 누름이 "다음 대사"로도 세어지지 않게 하기
+    endScene();
+  });
+
+  // =====================================================================
+  //  처음 준비
+  // =====================================================================
+  setPixelText($("logo1"), "STRAY", "#ffffff", "pt-logo", "#3a5fb0");
+  setPixelText($("logo2"), "SIGNAL", "#ffffff", "pt-logo", "#3a5fb0");
+  setPixelText($("selectTitle"), "SELECT PILOT", "#f0c050", "pt-xl");
+  setPixelText($("energyLabel"), "ENERGY", "#8a90b3", "pt-s");
+  setPixelText($("scoreLabel"), "SCORE", "#8a90b3", "pt-s");
+  setPixelText($("ultButtonText"), "ULT", "#ffffff", "pt-l");
+  buildTiles();
+  fitStage();
+  showTitle();
+  requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
